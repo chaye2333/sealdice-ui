@@ -342,10 +342,10 @@
     <el-form-item v-if="config.identityBindEnable">
       <template #label>
         <div>
-          <span>使用私聊验证码验证</span>
+          <span>启用验证码验证</span>
           <el-tooltip
             raw-content
-            content="默认开启，强烈建议保持开启。<br/>开启后由<b>民间 bot（OneBot 连接）</b>给被声明的旧 QQ 号发私聊验证码，只有真正持有该号的人才能确认，从根本上防止别人抢绑你的账号。<br/>只靠答题是拦不住「知道你旧 QQ 号、又猜得到你角色卡名」的人的。<br/><br/><b>什么时候需要关掉：</b>如果你已经放弃民间 bot 的运营，只打算用官方 bot 做数据迁移，那就没有可用的连接来发私聊验证码，必须关掉它、改用答题验证。">
+            content="默认开启，强烈建议保持开启。<br/>绑定时会给你声明的那个旧账号发一个验证码，只有真正持有它的人才能确认，从根本上防止别人抢绑你的账号。<br/><br/><b>通道会自动选择：</b><br/>① 民间 bot（OneBot 连接）能发私聊 → 私聊验证码；<br/>② 否则若下面开了邮箱验证且邮件配置完整 → 寄到该 QQ 号的 QQ 邮箱。<br/><br/><b>什么时候需要关掉：</b>两条通道都用不了时（没有民间 bot、也没配邮箱），绑定会无法完成。">
             <el-icon><question-filled /></el-icon>
           </el-tooltip>
         </div>
@@ -356,10 +356,24 @@
     <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
       <template #label>
         <div>
+          <span>用邮箱发送验证码</span>
+          <el-tooltip
+            raw-content
+            content="默认关闭。开启后，当民间 bot 发不出私聊时（例如你已放弃民间 bot 运营），验证码会寄到 <b>&lt;旧QQ号&gt;@qq.com</b>。<br/><br/><b>前提：</b>上面的「邮箱通知」必须已配置好发件邮箱 / 密钥 / SMTP，否则请不要打开这个开关。<br/><br/><b>为什么只寄 QQ 邮箱：</b>QQ 邮箱与 QQ 号绑定，所以「能收到这封信」≈「控制着这个 QQ 号」，才有防抢号的意义。系统<b>不会</b>让玩家自己填邮箱——那既证明不了归属，也会让骰子变成任意邮箱的发信机。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-checkbox v-model="config.identityBindUseEmailCode" label="开启" />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
+      <template #label>
+        <div>
           <span>验证码位数</span>
           <el-tooltip
             raw-content
-            content="私聊验证码的长度，取值范围 4 ~ 8，默认 6。<br/>位数越多越难猜，但对玩家来说也更麻烦。">
+            content="验证码长度，取值范围 4 ~ 8，默认 6。<br/>位数越多越难猜，但对玩家来说也更麻烦。">
             <el-icon><question-filled /></el-icon>
           </el-tooltip>
         </div>
@@ -389,40 +403,6 @@
         :min="60"
         :max="3600"
         :step="60"
-        clearable
-      />
-    </el-form-item>
-
-    <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
-      <template #label>
-        <div>
-          <span>验证码之后仍要求答题</span>
-          <el-tooltip
-            raw-content
-            content="默认关闭。<br/>验证码已经证明了账号归属，再答题一般只是增加麻烦。<br/>如果你想要「双重验证」（既要收到私聊验证码、又要答对角色卡题），可以打开它。">
-            <el-icon><question-filled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      <el-checkbox v-model="config.identityBindKeepQuiz" label="开启" />
-    </el-form-item>
-
-    <el-form-item v-if="config.identityBindEnable">
-      <template #label>
-        <div>
-          <span>身份绑定题目数量</span>
-          <el-tooltip
-            raw-content
-            content="仅在使用答题验证时需要答对的题目数量，取值范围 1 ~ 5，默认 1。<br/>题目内容是提问者旧账号下的角色卡名。">
-            <el-icon><question-filled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      <el-input-number
-        v-model="config.identityBindQuestionCount"
-        :min="1"
-        :max="5"
-        :step="1"
         clearable
       />
     </el-form-item>
@@ -1171,16 +1151,8 @@ const submit = async () => {
     mod.officialQQRequestTimeoutSec = toNumber(mod.officialQQRequestTimeoutSec);
   }
 
-  if (mod.identityBindQuestionCount) {
-    mod.identityBindQuestionCount = toNumber(mod.identityBindQuestionCount);
-  }
-
   if (mod.identityBindCooldownSec) {
     mod.identityBindCooldownSec = toNumber(mod.identityBindCooldownSec);
-  }
-
-  if (mod.identityBindFailCooldownSec) {
-    mod.identityBindFailCooldownSec = toNumber(mod.identityBindFailCooldownSec);
   }
 
   if (mod.identityBindCodeLength) {

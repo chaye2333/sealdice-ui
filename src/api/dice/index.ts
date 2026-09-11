@@ -111,13 +111,11 @@ export type DiceConfig = {
   officialQQRequestTimeoutSec: number; // QQ官方机器人单次请求超时（秒）
   officialQQChunkedUploadEnable: boolean; // 是否对本地文件启用分片上传（可保留文件名）
   identityBindEnable: boolean; // 是否允许使用 .bind 系列身份绑定指令
-  identityBindUseVerificationCode: boolean; // 是否用私聊验证码验证归属（防抢号）
-  identityBindKeepQuiz: boolean; // 验证码之后是否仍要求答题
+  identityBindUseVerificationCode: boolean; // 是否用验证码验证归属（防抢号）
+  identityBindUseEmailCode: boolean; // 民间 bot 发不出私聊时，改寄 QQ 邮箱验证码
   identityBindCodeLength: number; // 验证码位数
   identityBindCodeExpireSec: number; // 验证码有效期（秒）
-  identityBindQuestionCount: number; // 身份绑定需要答对的题目数量
   identityBindCooldownSec: number; // 身份绑定两次发起之间的最小间隔（秒）
-  identityBindFailCooldownSec: number; // 身份绑定答错后的锁定时长（秒）
   logMultiBotDedupWindowSec: number; // 同群多 bot 时的日志去重窗口（秒）
   playerNameWrapEnable: boolean; // 是否启用玩家名包裹
   mailEnable: boolean; // 是否启用邮件功能
