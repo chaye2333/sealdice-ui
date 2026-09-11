@@ -108,6 +108,12 @@ export type DiceConfig = {
   QQEnablePoke: boolean; // 是否启用QQ戳一戳功能
   officialQQFileSendBase64: boolean; // 是否以 Base64 发送文件
   officialQQUseMarkdown: boolean; // 是否使用 Markdown
+  officialQQRequestTimeoutSec: number; // QQ官方机器人单次请求超时（秒）
+  officialQQChunkedUploadEnable: boolean; // 是否对本地文件启用分片上传（可保留文件名）
+  identityBindEnable: boolean; // 是否允许使用 .bind 系列身份绑定指令
+  identityBindQuestionCount: number; // 身份绑定需要答对的题目数量
+  identityBindCooldownSec: number; // 身份绑定两次发起之间的最小间隔（秒）
+  identityBindFailCooldownSec: number; // 身份绑定答错后的锁定时长（秒）
   playerNameWrapEnable: boolean; // 是否启用玩家名包裹
   mailEnable: boolean; // 是否启用邮件功能
   mailFrom: string; // 邮件发件人

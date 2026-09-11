@@ -294,6 +294,114 @@
     <el-form-item>
       <template #label>
         <div>
+          <span>官方QQ 请求超时（秒）</span>
+          <el-tooltip
+            raw-content
+            content="仅对 QQ 官方机器人有效。<br/>单次 OpenAPI 请求的超时时间，覆盖发消息、上传文件、拉取机器人信息等。<br/>官方建议上传接口 ≥5 秒，默认 60。用 URL 发大文件时腾讯要先下载完整个文件才回响应头，经常超时可以调大到 120 以上。<br/>取值范围 5 ~ 600，重启后生效。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.officialQQRequestTimeoutSec"
+        :min="5"
+        :max="600"
+        :step="5"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item>
+      <template #label>
+        <div>
+          <span>本地文件使用分片上传</span>
+          <el-tooltip
+            raw-content
+            content="仅对 QQ 官方机器人有效，默认关闭。<br/>开启后发送本地文件改走「申请上传 → 分片上传 → 分片完成 → 合并」流程，<b>可以保留文件名</b>；关闭时文件名会显示为「未命名」。<br/>注意：这是新流程，建议先在小群里发一个小文件测试成功后再正式使用。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-checkbox v-model="config.officialQQChunkedUploadEnable" label="开启" />
+    </el-form-item>
+
+    <el-form-item>
+      <template #label>
+        <div>
+          <span>启用身份绑定</span>
+          <el-tooltip
+            raw-content
+            content="默认关闭。开启后用户可以在 QQ 官方机器人上用 <b>.bind 旧QQ号</b> 把现在的身份绑定回旧的 QQ 账号（例如 NapCat 时代的号码），从而继续使用旧账号的角色卡与日志。<br/>旧群号请用 <b>.group bind 旧群号</b>（需群管权限）。<br/>绑定只是「读取时回退到旧数据」，不会移动或合并数据。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-checkbox v-model="config.identityBindEnable" label="开启" />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable">
+      <template #label>
+        <div>
+          <span>身份绑定题目数量</span>
+          <el-tooltip
+            raw-content
+            content="发起绑定时需要答对的题目数量，取值范围 1 ~ 5，默认 1。<br/>题目内容是提问者旧账号下的角色卡名，答对才能完成绑定。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.identityBindQuestionCount"
+        :min="1"
+        :max="5"
+        :step="1"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable">
+      <template #label>
+        <div>
+          <span>身份绑定发起间隔（秒）</span>
+          <el-tooltip
+            raw-content
+            content="同一个用户两次发起绑定之间的最小间隔，默认 60 秒，填 0 表示不限制。<br/>上限 86400（一天）。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.identityBindCooldownSec"
+        :min="0"
+        :max="86400"
+        :step="10"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable">
+      <template #label>
+        <div>
+          <span>身份绑定答错锁定（秒）</span>
+          <el-tooltip
+            raw-content
+            content="答错后的锁定时长，默认 43200 秒（12 小时）。<br/>这是为了防止别人用穷举的方式猜你的角色卡名或日志名，不建议改小。<br/>上限 86400（一天）。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.identityBindFailCooldownSec"
+        :min="1"
+        :max="86400"
+        :step="3600"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item>
+      <template #label>
+        <div>
           <span>限制.text 指令</span>
           <el-tooltip
             raw-content
@@ -968,6 +1076,23 @@ const submit = async () => {
 
   if (mod.logSizeNoticeCount) {
     mod.logSizeNoticeCount = toNumber(mod.logSizeNoticeCount);
+  }
+
+  // 数字输入框在某些情况下会回传字符串，后端按 int64/int 解析会失败，这里统一转成数字。
+  if (mod.officialQQRequestTimeoutSec) {
+    mod.officialQQRequestTimeoutSec = toNumber(mod.officialQQRequestTimeoutSec);
+  }
+
+  if (mod.identityBindQuestionCount) {
+    mod.identityBindQuestionCount = toNumber(mod.identityBindQuestionCount);
+  }
+
+  if (mod.identityBindCooldownSec) {
+    mod.identityBindCooldownSec = toNumber(mod.identityBindCooldownSec);
+  }
+
+  if (mod.identityBindFailCooldownSec) {
+    mod.identityBindFailCooldownSec = toNumber(mod.identityBindFailCooldownSec);
   }
 
   if (mod.ignoreUnaddressedBotCmd) {
