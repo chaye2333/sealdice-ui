@@ -356,15 +356,23 @@
     <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
       <template #label>
         <div>
-          <span>用邮箱发送验证码</span>
+          <span>优先用邮箱发送</span>
           <el-tooltip
             raw-content
-            content="默认关闭。开启后，当民间 bot 发不出私聊时（例如你已放弃民间 bot 运营），验证码会寄到 <b>&lt;旧QQ号&gt;@qq.com</b>。<br/><br/><b>前提：</b>上面的「邮箱通知」必须已配置好发件邮箱 / 密钥 / SMTP，否则请不要打开这个开关。<br/><br/><b>为什么只寄 QQ 邮箱：</b>QQ 邮箱与 QQ 号绑定，所以「能收到这封信」≈「控制着这个 QQ 号」，才有防抢号的意义。系统<b>不会</b>让玩家自己填邮箱——那既证明不了归属，也会让骰子变成任意邮箱的发信机。">
+            content="默认关闭。<br/><br/><b>邮箱通道不需要单独打开</b>：只要上面的「邮箱通知」配齐了（发件邮箱 / 邮箱密钥 / SMTP 地址），验证码就能走邮箱。这里只决定<b>两条通道都在时先用哪个</b>。<br/><br/><b>关闭时（默认）：</b>先试民间 bot 私聊，发不出去才走邮箱。<br/><b>开启后：</b>先寄到 &lt;旧QQ号&gt;@qq.com，邮箱不可用再退回私聊。<br/><br/>想优先邮箱的典型场景：私聊通道不稳定（延迟大、偶发发不出去），而 SMTP 很可靠。<br/><br/>注意：<b>群绑定永远走私聊</b>（群号推不出邮箱），这个开关只影响个人绑定。">
             <el-icon><question-filled /></el-icon>
           </el-tooltip>
         </div>
       </template>
-      <el-checkbox v-model="config.identityBindUseEmailCode" label="开启" />
+      <el-space direction="vertical" alignment="flex-start" size="small">
+        <el-checkbox v-model="config.identityBindPreferEmailCode" label="开启" />
+        <el-text v-if="!mailReady" type="warning" size="small">
+          当前「邮箱通知」没配齐，邮箱通道不可用，验证码只能走民间 bot 私聊。
+        </el-text>
+        <el-text v-else type="success" size="small">
+          邮箱通知已配置，验证码可以用邮箱发送。
+        </el-text>
+      </el-space>
     </el-form-item>
 
     <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
@@ -443,26 +451,6 @@
         :min="0"
         :max="86400"
         :step="10"
-        clearable
-      />
-    </el-form-item>
-
-    <el-form-item v-if="config.identityBindEnable">
-      <template #label>
-        <div>
-          <span>身份绑定答错锁定（秒）</span>
-          <el-tooltip
-            raw-content
-            content="答错后的锁定时长，默认 43200 秒（12 小时）。<br/>这是为了防止别人用穷举的方式猜你的角色卡名或日志名，不建议改小。<br/>上限 86400（一天）。">
-            <el-icon><question-filled /></el-icon>
-          </el-tooltip>
-        </div>
-      </template>
-      <el-input-number
-        v-model="config.identityBindFailCooldownSec"
-        :min="1"
-        :max="86400"
-        :step="3600"
         clearable
       />
     </el-form-item>
@@ -995,6 +983,12 @@ const store = useStore();
 
 const config = ref<any>({});
 const fileList = ref<any[]>([]);
+
+// mailReady：邮箱通道是否可用（后端逻辑就是 CanSendMail：三项齐全即可）。
+// 邮箱通道没有独立开关，所以这里用来给骰主一个直观提示。
+const mailReady = computed(
+  () => !!(config.value.mailFrom && config.value.mailPassword && config.value.mailSmtp),
+);
 
 const trayTooltipMaxLength = 10;
 

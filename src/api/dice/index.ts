@@ -112,7 +112,7 @@ export type DiceConfig = {
   officialQQChunkedUploadEnable: boolean; // 是否对本地文件启用分片上传（可保留文件名）
   identityBindEnable: boolean; // 是否允许使用 .bind 系列身份绑定指令
   identityBindUseVerificationCode: boolean; // 是否用验证码验证归属（防抢号）
-  identityBindUseEmailCode: boolean; // 民间 bot 发不出私聊时，改寄 QQ 邮箱验证码
+  identityBindPreferEmailCode: boolean; // 两条通道都可用时是否优先用邮箱
   identityBindCodeLength: number; // 验证码位数
   identityBindCodeExpireSec: number; // 验证码有效期（秒）
   identityBindCooldownSec: number; // 身份绑定两次发起之间的最小间隔（秒）
