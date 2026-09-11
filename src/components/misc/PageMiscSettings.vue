@@ -342,10 +342,78 @@
     <el-form-item v-if="config.identityBindEnable">
       <template #label>
         <div>
+          <span>使用私聊验证码验证</span>
+          <el-tooltip
+            raw-content
+            content="默认开启，强烈建议保持开启。<br/>开启后由<b>民间 bot（OneBot 连接）</b>给被声明的旧 QQ 号发私聊验证码，只有真正持有该号的人才能确认，从根本上防止别人抢绑你的账号。<br/>只靠答题是拦不住「知道你旧 QQ 号、又猜得到你角色卡名」的人的。<br/><br/><b>什么时候需要关掉：</b>如果你已经放弃民间 bot 的运营，只打算用官方 bot 做数据迁移，那就没有可用的连接来发私聊验证码，必须关掉它、改用答题验证。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-checkbox v-model="config.identityBindUseVerificationCode" label="开启" />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
+      <template #label>
+        <div>
+          <span>验证码位数</span>
+          <el-tooltip
+            raw-content
+            content="私聊验证码的长度，取值范围 4 ~ 8，默认 6。<br/>位数越多越难猜，但对玩家来说也更麻烦。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.identityBindCodeLength"
+        :min="4"
+        :max="8"
+        :step="1"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
+      <template #label>
+        <div>
+          <span>验证码有效期（秒）</span>
+          <el-tooltip
+            raw-content
+            content="验证码多久内有效，取值范围 60 ~ 3600，默认 600（10 分钟）。<br/>超时后玩家需要重新发起绑定。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.identityBindCodeExpireSec"
+        :min="60"
+        :max="3600"
+        :step="60"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable && config.identityBindUseVerificationCode">
+      <template #label>
+        <div>
+          <span>验证码之后仍要求答题</span>
+          <el-tooltip
+            raw-content
+            content="默认关闭。<br/>验证码已经证明了账号归属，再答题一般只是增加麻烦。<br/>如果你想要「双重验证」（既要收到私聊验证码、又要答对角色卡题），可以打开它。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-checkbox v-model="config.identityBindKeepQuiz" label="开启" />
+    </el-form-item>
+
+    <el-form-item v-if="config.identityBindEnable">
+      <template #label>
+        <div>
           <span>身份绑定题目数量</span>
           <el-tooltip
             raw-content
-            content="发起绑定时需要答对的题目数量，取值范围 1 ~ 5，默认 1。<br/>题目内容是提问者旧账号下的角色卡名，答对才能完成绑定。">
+            content="仅在使用答题验证时需要答对的题目数量，取值范围 1 ~ 5，默认 1。<br/>题目内容是提问者旧账号下的角色卡名。">
             <el-icon><question-filled /></el-icon>
           </el-tooltip>
         </div>
@@ -355,6 +423,26 @@
         :min="1"
         :max="5"
         :step="1"
+        clearable
+      />
+    </el-form-item>
+
+    <el-form-item>
+      <template #label>
+        <div>
+          <span>日志去重窗口（秒）</span>
+          <el-tooltip
+            raw-content
+            content="范围 5 ~ 600，默认 5。<br/><b>5 秒 = 原版行为</b>：只去重「同一个连接重复推送的同一条消息」，不会合并任何真实发言。<br/><br/>只有当你<b>在同一个群里同时挂了官方 bot 和民间 bot</b> 时才需要调大（例如 30）：两个连接各收到一次同一条消息，而它们的消息 ID 完全不同，5 秒挡不住，日志会被记两遍。<br/><br/>⚠️ 代价：调大后会改成按「群 + 人 + 正文」去重，同一个人在窗口内发的两条<b>完全相同</b>的消息会被并成一条（例如连打两个「1」）。日志是永久记录，请确认确实需要再调。">
+            <el-icon><question-filled /></el-icon>
+          </el-tooltip>
+        </div>
+      </template>
+      <el-input-number
+        v-model="config.logMultiBotDedupWindowSec"
+        :min="5"
+        :max="600"
+        :step="5"
         clearable
       />
     </el-form-item>
@@ -1093,6 +1181,18 @@ const submit = async () => {
 
   if (mod.identityBindFailCooldownSec) {
     mod.identityBindFailCooldownSec = toNumber(mod.identityBindFailCooldownSec);
+  }
+
+  if (mod.identityBindCodeLength) {
+    mod.identityBindCodeLength = toNumber(mod.identityBindCodeLength);
+  }
+
+  if (mod.identityBindCodeExpireSec) {
+    mod.identityBindCodeExpireSec = toNumber(mod.identityBindCodeExpireSec);
+  }
+
+  if (mod.logMultiBotDedupWindowSec) {
+    mod.logMultiBotDedupWindowSec = toNumber(mod.logMultiBotDedupWindowSec);
   }
 
   if (mod.ignoreUnaddressedBotCmd) {
