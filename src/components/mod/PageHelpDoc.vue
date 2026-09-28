@@ -104,6 +104,125 @@
               @remove-alias="removeAlias" />
           </el-form-item>
         </el-form>
+        <el-divider />
+        <h3>图片渲染</h3>
+        <el-alert type="info" :closable="false" style="margin-bottom: 1rem">
+          命中敏感词或正文过长时才转图片；渲染失败会自动回退成文本；图片每次现场渲染、不缓存；渲染后端需要用仓库
+          <el-tag size="small" type="info" disable-transitions>tools/helpdoc-render</el-tag>
+          自部署。
+        </el-alert>
+        <el-form label-width="170px">
+          <el-form-item>
+            <template #label>
+              <el-text>启用图片渲染</el-text>
+              <el-tooltip content="帮助正文命中敏感词、或超过长度阈值时，改发一张现场渲染的图片。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-checkbox v-model="helpImageConfig.imageRenderEnable" label="开启" />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>长度阈值</el-text>
+              <el-tooltip content="正文字符数 ≥ 该值就转图片。0 = 不按长度触发。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-input-number
+              v-model="helpImageConfig.imageRenderMinLength"
+              size="small"
+              :step="10"
+              :min="0"
+              step-strictly />
+            <el-text size="small" type="info" style="margin-left: 0.5rem">
+              正文字符数 ≥ 该值就转图片；0 = 不按长度触发
+            </el-text>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>图片内敏感词打码</el-text>
+              <el-tooltip content="转图片时，图片里是否也把敏感词打码。不勾选 = 图片里保留原文。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-checkbox v-model="helpImageConfig.imageRenderMaskInImage" label="开启" />
+            <el-text size="small" type="info" style="margin-left: 0.5rem">
+              不勾选 = 图片里保留原文；勾选则图片里也是口口
+            </el-text>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>渲染后端地址</el-text>
+              <el-tooltip content="自部署的渲染后端地址，例如 http://127.0.0.1:3212/render">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-input
+              v-model="helpImageConfig.imageRenderUrl"
+              style="width: 22rem"
+              placeholder="http://127.0.0.1:3212/render" />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>渲染令牌</el-text>
+              <el-tooltip content="可选令牌，会以 Authorization: Bearer <token> 发送。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-input
+              v-model="helpImageConfig.imageRenderToken"
+              style="width: 22rem"
+              placeholder="可选，留空则不发送" />
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>渲染超时</el-text>
+              <el-tooltip content="渲染请求超时时间，0 = 由后端按 15 秒处理。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-input-number
+              v-model="helpImageConfig.imageRenderTimeoutSec"
+              size="small"
+              :step="1"
+              :min="0"
+              step-strictly />
+            <el-text size="small" type="info" style="margin-left: 0.5rem">
+              秒，0 = 后端按 15 秒处理
+            </el-text>
+          </el-form-item>
+          <el-form-item>
+            <template #label>
+              <el-text>图片宽度</el-text>
+              <el-tooltip content="渲染出的图片宽度（像素），0 = 由后端按 820 处理。">
+                <el-icon>
+                  <question-filled />
+                </el-icon>
+              </el-tooltip>
+            </template>
+            <el-input-number
+              v-model="helpImageConfig.imageRenderWidth"
+              size="small"
+              :step="20"
+              :min="0"
+              step-strictly />
+            <el-text size="small" type="info" style="margin-left: 0.5rem">
+              像素，0 = 后端按 820 处理
+            </el-text>
+          </el-form-item>
+        </el-form>
         <template #footer>
           <el-space>
             <el-button @click="configDialogClose">取消</el-button>
@@ -228,9 +347,10 @@
 
 <script lang="ts" setup>
 import type { FormRules, FormInstance, ElTree } from 'element-plus';
-import { Delete, Refresh, Setting, Upload } from '@element-plus/icons-vue';
+import { Delete, QuestionFilled, Refresh, Setting, Upload } from '@element-plus/icons-vue';
 import { trim } from 'lodash-es';
 import type { HelpDoc, HelpTextItem, HelpTextItemQuery } from '~/type.d.ts';
+import type { HelpDocImageRenderConfig } from '~/api/helpdoc';
 import {
   deleteHelpDoc,
   getHelpDocConfig,
@@ -457,11 +577,39 @@ const reload = async () => {
 const configDialogVisible = ref<boolean>(false);
 const configNeedSave = ref<boolean>(false);
 const helpAliases = ref<Map<string, string[]>>(new Map());
+const helpImageConfig = ref<HelpDocImageRenderConfig>({
+  imageRenderEnable: false,
+  imageRenderMinLength: 0,
+  imageRenderMaskInImage: false,
+  imageRenderUrl: '',
+  imageRenderToken: '',
+  imageRenderTimeoutSec: 0,
+  imageRenderWidth: 0,
+});
+
+watch(
+  helpImageConfig,
+  () => {
+    configNeedSave.value = true;
+  },
+  { deep: true },
+);
 
 const refreshConfig = async () => {
   const config = await getHelpDocConfig();
   helpAliases.value = new Map(Object.entries(config.aliases));
-  configNeedSave.value = false;
+  helpImageConfig.value = {
+    imageRenderEnable: config.imageRenderEnable ?? false,
+    imageRenderMinLength: config.imageRenderMinLength ?? 0,
+    imageRenderMaskInImage: config.imageRenderMaskInImage ?? false,
+    imageRenderUrl: config.imageRenderUrl ?? '',
+    imageRenderToken: config.imageRenderToken ?? '',
+    imageRenderTimeoutSec: config.imageRenderTimeoutSec ?? 0,
+    imageRenderWidth: config.imageRenderWidth ?? 0,
+  };
+  await nextTick(() => {
+    configNeedSave.value = false;
+  });
 };
 
 const configDialogClose = () => {
@@ -495,8 +643,10 @@ const removeAlias = (groupKey: string, alias: string) => {
 const summitConfig = async () => {
   if (helpAliases.value) {
     console.log('aliases=', helpAliases.value);
+    // 后端 POST /helpdoc/config 是整体覆盖保存，必须带上完整配置（别名 + 图片渲染）
     const res = await postHelpDocConfig({
       aliases: Object.fromEntries(helpAliases.value),
+      ...helpImageConfig.value,
     });
     if (res.result) {
       ElMessage.success('保存设置成功');

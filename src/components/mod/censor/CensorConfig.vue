@@ -69,6 +69,40 @@
       </template>
       <el-input v-model="config.filterRegex" style="width: 12rem" />
     </el-form-item>
+    <el-form-item>
+      <template #label>
+        <el-text>出站掩码</el-text>
+        <el-tooltip
+          content="骰子发出的文本命中敏感词时，只把命中的词替换为等长掩码（如 4 字词 → 口口口口），而不是把整条消息替换为「完全拦截」文案。">
+          <el-icon>
+            <question-filled />
+          </el-icon>
+        </el-tooltip>
+      </template>
+      <el-checkbox v-model="config.maskEnable" label="开启" />
+    </el-form-item>
+    <el-form-item>
+      <template #label>
+        <el-text>掩码字符</el-text>
+        <el-tooltip
+          content="掩码使用的字符，最多 4 个字符，留空时按「口」处理。命中词有几个字，就重复几次该字符。">
+          <el-icon>
+            <question-filled />
+          </el-icon>
+        </el-tooltip>
+      </template>
+      <el-input v-model="config.maskChar" style="width: 12rem" placeholder="口" maxlength="4" />
+    </el-form-item>
+    <el-form-item label-width="0">
+      <el-alert type="warning" :closable="false" show-icon>
+        <template #title>出站掩码的计数规则</template>
+        <el-text>
+          打开出站掩码后：<strong>帮助文档</strong>（.help / .find
+          等）命中敏感词只打码、<strong>不计数、不拉黑</strong>（否则骰主会被自己写的帮助文档拉黑）；<strong>其它出站</strong>（掷骰结果、自定义回复、合并转发）在打码的<strong>同时照常计数</strong>，并按各等级阈值触发警告
+          / 拉黑，风控强度与关闭掩码时一致。
+        </el-text>
+      </el-alert>
+    </el-form-item>
   </el-form>
   <div>
     <h4 style="display: inline">响应设置</h4>
@@ -276,6 +310,8 @@ interface Config {
   caseSensitive: boolean;
   matchPinyin: boolean;
   filterRegex: string;
+  maskEnable: boolean;
+  maskChar: string;
   levelConfig: LevelConfigs;
 }
 
@@ -284,6 +320,8 @@ const config = ref<Config>({
   caseSensitive: false,
   matchPinyin: false,
   filterRegex: '',
+  maskEnable: false,
+  maskChar: '口',
   levelConfig: {
     notice: { threshold: 0, handlers: [], score: 0 },
     caution: { threshold: 0, handlers: [], score: 0 },

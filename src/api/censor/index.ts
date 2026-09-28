@@ -91,6 +91,10 @@ interface CensorConfig {
   caseSensitive: boolean;
   matchPinyin: boolean;
   filterRegex: string;
+  /** 出站掩码：命中的敏感词替换为等长掩码，而不是整条消息替换为完全拦截文案 */
+  maskEnable: boolean;
+  /** 掩码字符，最多 4 个字符，默认为「口」 */
+  maskChar: string;
   levelConfig: LeverConfig;
 }
 
