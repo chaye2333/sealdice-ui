@@ -27,7 +27,7 @@ export async function deleteStoryLog(log: Log) {
   return await request<boolean>('delete', 'log', log);
 }
 
-export async function postStoryLog(log: Log) {
+export async function postStoryLog(log: Log & { force?: boolean }) {
   return await request('post', 'uploadLog', log);
 }
 

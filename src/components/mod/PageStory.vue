@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { Back, Delete, Select, Upload } from '@element-plus/icons-vue';
+import { Back, Delete, Select, Upload, RefreshRight } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import randomColor from 'randomcolor';
@@ -84,13 +84,19 @@ async function delLog(v: Log) {
   // return backend.delete(url('log'), { headers: { token }, data: v }) as unknown as boolean
 }
 
-async function uploadLog(v: Log) {
-  await ElMessageBox.confirm('将此跑团日志上传至海豹服务器？', '警告', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  });
-  return postStoryLog(v);
+async function uploadLog(v: Log, force = false) {
+  await ElMessageBox.confirm(
+    force
+      ? '强制重新上传这个跑团日志？会忽略「缓存链接仍然有效」的判断，直接换取新链接。'
+      : '将此跑团日志上传至海豹服务器？',
+    '警告',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    },
+  );
+  return postStoryLog({ ...v, force });
   // return backend.post(url("uploadLog"), v,{ headers: { token }}) as any
 }
 
@@ -201,8 +207,8 @@ async function DelLogs() {
   });
 }
 
-async function UploadLog(v: Log) {
-  const info = (await uploadLog(v)) as string;
+async function UploadLog(v: Log, force = false) {
+  const info = (await uploadLog(v, force)) as string;
   ElMessage({
     showClose: true,
     dangerouslyUseHTMLString: true,
@@ -367,6 +373,11 @@ onBeforeMount(async () => {
                 <ElButton size="small" type="primary" :icon="Upload" plain @click="UploadLog(i)"
                   >提取日志
                 </ElButton>
+                <ElTooltip content="忽略缓存链接，强制重新上传（换了染色器域名后用）">
+                  <ElButton size="small" :icon="RefreshRight" plain @click="UploadLog(i, true)"
+                    >强制重传
+                  </ElButton>
+                </ElTooltip>
                 <ElButton size="small" type="danger" :icon="Delete" plain @click="DelLog(i)"
                   >删除
                 </ElButton>
