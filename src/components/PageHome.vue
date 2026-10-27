@@ -43,31 +43,16 @@
         <button class="network-health-trigger" type="button" @click="refreshNetworkHealth">
           <span>网络质量：</span>
 
-          <el-text type="primary" v-if="networkHealth.timestamp === 0">检测中…… 🤔</el-text>
-          <el-text
-            type="success"
-            v-else-if="
-              networkHealth.total !== 0 && networkHealth.total === networkHealth.ok?.length
-            "
-            >优 😄</el-text
-          >
-          <el-text
-            type="primary"
-            v-else-if="networkHealth.ok?.includes('sign') && networkHealth.ok?.includes('seal')"
-            >一般 😐️</el-text
-          >
-          <el-text
-            type="danger"
-            v-else-if="networkHealth.total !== 0 && (networkHealth.ok ?? []).length === 0"
-            >网络中断 😱</el-text
-          >
+          <el-text type="primary" v-if="healthLevel === 'pending'">检测中…… 🤔</el-text>
+          <el-text type="success" v-else-if="healthLevel === 'good'">优 😄</el-text>
+          <el-text type="primary" v-else-if="healthLevel === 'normal'">一般 😐️</el-text>
+          <el-text type="danger" v-else-if="healthLevel === 'down'">网络中断 😱</el-text>
           <el-text v-else type="warning">差 ☹️</el-text>
         </button>
       </el-tooltip>
 
       <el-text v-if="isNetworkHealthPoor" class="ml-3" type="warning" size="small"
-        >这意味着你可能无法正常使用内置客户端/Lagrange 连接 QQ
-        平台，有时会出现消息无法正常发送的现象。</el-text
+        >部分平台检测不通，对应平台（官方 QQ / KOOK / Discord 等）可能连不上或消息发不出去。</el-text
       >
 
       <el-tooltip v-if="networkHealth.timestamp !== 0">
@@ -80,23 +65,20 @@
       </el-tooltip>
     </div>
 
-    <div v-if="networkHealth.timestamp !== 0" class="mx-2 flex items-center gap-4">
-      <el-text size="small"
-        >官网
-        <component :is="getWebsiteHealthComponent(networkHealth.ok?.includes('seal'))"></component
-      ></el-text>
-      <el-text size="small"
-        >Lagrange Sign
-        <component :is="getWebsiteHealthComponent(networkHealth.ok?.includes('sign'))"></component
-      ></el-text>
-      <el-text size="small"
-        >Google
-        <component :is="getWebsiteHealthComponent(networkHealth.ok?.includes('google'))"></component
-      ></el-text>
-      <el-text size="small"
-        >GitHub
-        <component :is="getWebsiteHealthComponent(networkHealth.ok?.includes('github'))"></component
-      ></el-text>
+    <div
+      v-if="networkHealth.timestamp !== 0"
+      class="mx-2 flex items-center gap-4 flex-wrap">
+      <el-tooltip v-for="t in healthTargets" :key="t.target">
+        <template #content>
+          {{ targetLabel(t.target) }}
+          <template v-if="t.ok"> · {{ (t.duration / 1e6).toFixed(0) }} ms</template>
+          <template v-else> · 不可达</template>
+        </template>
+        <el-text size="small">
+          {{ targetLabel(t.target) }}
+          <component :is="getWebsiteHealthComponent(t.ok)"></component>
+        </el-text>
+      </el-tooltip>
     </div>
   </div>
 
@@ -297,7 +279,7 @@ import { useStore } from '~/store';
 import dayjs from 'dayjs';
 import { filesize } from 'filesize';
 import { CircleCheckFilled, CircleCloseFilled } from '@element-plus/icons-vue';
-import { getUtilsCheckNetWorkHealth } from '~/api/utils';
+import { getUtilsCheckNetWorkHealth, type NetworkHealthTarget } from '~/api/utils';
 import { postUpgrade } from '~/api/dice';
 
 const store = useStore();
@@ -308,22 +290,52 @@ const now = ref<dayjs.Dayjs>(dayjs());
 const networkHealth = ref({
   total: 0,
   ok: [],
+  targets: [],
   timestamp: 0,
 } as {
   total: number;
   ok: string[];
+  targets: NetworkHealthTarget[];
   timestamp: number;
 });
 
-const isNetworkHealthPoor = computed(() => {
-  const { timestamp, total, ok } = networkHealth.value;
-  return (
-    timestamp !== 0 &&
-    !(total !== 0 && total === ok.length) &&
-    !(ok.includes('sign') && ok.includes('seal')) &&
-    !(total !== 0 && ok.length === 0)
-  );
+// 检测目标改名后，UI 不能写死；未知 target 直接显示原始名字
+const targetLabels: Record<string, string> = {
+  qq: 'QQ 官方',
+  kook: 'KOOK',
+  discord: 'Discord',
+  telegram: 'Telegram',
+  dingtalk: '钉钉',
+  slack: 'Slack',
+  // 老版本后端的检测目标，保留兼容
+  seal: '官网',
+  sign: 'Lagrange Sign',
+  google: 'Google',
+  github: 'GitHub',
+};
+
+const targetLabel = (target: string) => targetLabels[target] || target;
+
+/** 后端没返回 targets（老版本）时，用 ok 列表兜底 */
+const healthTargets = computed<NetworkHealthTarget[]>(() => {
+  if (networkHealth.value.targets?.length) return networkHealth.value.targets;
+  return (networkHealth.value.ok ?? []).map(t => ({ target: t, ok: true, duration: 0 }));
 });
+
+type HealthLevel = 'pending' | 'good' | 'normal' | 'bad' | 'down';
+
+const healthLevel = computed<HealthLevel>(() => {
+  const { timestamp, total, ok } = networkHealth.value;
+  if (!timestamp || total === 0) return 'pending';
+  const okCount = ok?.length ?? 0;
+  if (okCount === total) return 'good';
+  if (okCount === 0) return 'down';
+  // 一半以上可达算"一般"，否则"差"
+  if (okCount * 2 >= total) return 'normal';
+  return 'bad';
+});
+
+const isNetworkHealthPoor = computed(() => healthLevel.value === 'bad');
 
 let timerId: number;
 let checkTimerId: number;
