@@ -26,6 +26,8 @@ export interface ChatConsoleMessage {
   senderId: string;
   senderName: string;
   senderOpenId?: string;
+  /** 头像（后端用 AppID + openid 拼的 thirdqq 地址） */
+  avatarUrl?: string;
   text: string;
   media?: ChatConsoleMedia[];
   msgId?: string;
@@ -44,6 +46,8 @@ export interface ChatConsoleConversation {
   nameManual: boolean;
   memberCount?: number;
   fullMessage: boolean;
+  pinned: boolean;
+  avatarUrl?: string;
   lastTs: number;
   lastText: string;
   unread: number;
@@ -148,6 +152,15 @@ export async function postSettings(retentionDays: number) {
   return await request<FailResponse | OkResponse<{ retentionDays: number }>>('post', 'settings', {
     retentionDays,
   });
+}
+
+/** 置顶 / 取消置顶会话 */
+export async function postPin(key: string, pinned: boolean) {
+  return await request<FailResponse | OkResponse<{ conversation: ChatConsoleConversation }>>(
+    'post',
+    'pin',
+    { key, pinned },
+  );
 }
 
 /** 清空单个会话（传 key）或全部（all=true） */

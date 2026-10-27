@@ -21,6 +21,7 @@ import {
   postMute,
   postRead,
   postRename,
+  postPin,
   getStorage,
   postSettings,
   postPurge,
@@ -48,6 +49,16 @@ const hasMore = ref(false);
 const quote = ref<ChatConsoleQuote | null>(null);
 const mentions = ref<ChatConsoleMention[]>([]);
 const fileInput = ref<HTMLInputElement>();
+
+// 移动端：会话列表与消息区二选一显示，避免侧栏吃掉半屏
+const isNarrow = ref(false);
+const mobileListOpen = ref(false);
+let narrowQuery: MediaQueryList | null = null;
+
+function syncNarrow(evt?: MediaQueryListEvent) {
+  isNarrow.value = evt ? evt.matches : !!narrowQuery?.matches;
+  if (!isNarrow.value) mobileListOpen.value = false;
+}
 
 const muteDialog = ref(false);
 const muteTarget = ref<{ openid: string; name: string } | null>(null);
@@ -101,9 +112,24 @@ function formatTime(ts: number) {
   return t.format('YYYY-MM-DD');
 }
 
-/** 去掉文本里的 CQ 码，附件由 media 单独渲染 */
+/** 官方媒体 URL 走本机代理：浏览器直连腾讯域名常被防盗链/跨域挡住 */
+function mediaSrc(url: string) {
+  if (!url) return '';
+  return `${apiBase()}/chat-console/media?token=${encodeURIComponent(authToken())}&url=${encodeURIComponent(url)}`;
+}
+
+/** 去掉文本里的 CQ 码 / @ 标签，表情包标签显示成 [表情]，附件由 media 单独渲染 */
 function plainText(text: string) {
-  return (text || '').replace(/\[CQ:[^\]]+\]/g, '').trim();
+  return (text || '')
+    .replace(/\[CQ:[^\]]+\]/g, '')
+    .replace(/<face[^>]*\/?>/gi, '[表情]')
+    .replace(/<qqbot-at-user[^>]*\/>/gi, '@')
+    .trim();
+}
+
+/** 只有表情/无正文又拿不到附件时给个占位 */
+function isPlaceholderMessage(msg: ChatConsoleMessage) {
+  return !msg.recalled && !plainText(msg.text) && !(msg.media && msg.media.length > 0);
 }
 
 function bubbleClass(msg: ChatConsoleMessage) {
@@ -126,6 +152,19 @@ function convIcon(conv: ChatConsoleConversation) {
   return conv.kind === 'group' ? '👥' : '👤';
 }
 
+async function togglePin(conv: ChatConsoleConversation) {
+  try {
+    const res = await postPin(conv.key, !conv.pinned);
+    if (res.result) {
+      upsertConversation({ ...conv, ...res.conversation });
+    } else {
+      ElMessage.error(res.err || '置顶失败');
+    }
+  } catch {
+    ElMessage.error('置顶失败，请检查连接');
+  }
+}
+
 function canRecall(msg: ChatConsoleMessage) {
   return msg.dir === 'out' && !!msg.msgId && !msg.recalled;
 }
@@ -146,7 +185,11 @@ function upsertConversation(conv: ChatConsoleConversation) {
   // 正在看的会话不需要未读角标
   const cur = conversations.value.find(c => c.key === activeKey.value);
   if (cur) cur.unread = 0;
-  conversations.value.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  // 置顶在前，其余按最后消息时间倒序
+  conversations.value.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return (b.lastTs || 0) - (a.lastTs || 0);
+  });
 }
 
 async function loadConversations(silent = false) {
@@ -174,6 +217,7 @@ async function selectConversation(conv: ChatConsoleConversation) {
   hasMore.value = false;
   quote.value = null;
   mentions.value = [];
+  if (isNarrow.value) mobileListOpen.value = false;
   await loadMessages();
   if (conv.unread) {
     conv.unread = 0;
@@ -623,11 +667,15 @@ function stopStream() {
 }
 
 onMounted(async () => {
+  narrowQuery = window.matchMedia('(max-width: 768px)');
+  syncNarrow();
+  narrowQuery.addEventListener('change', syncNarrow);
   await loadConversations();
   startStream();
 });
 
 onBeforeUnmount(() => {
+  narrowQuery?.removeEventListener('change', syncNarrow);
   stopStream();
 });
 </script>
@@ -649,12 +697,17 @@ onBeforeUnmount(() => {
         </span>
         <el-button size="small" :icon="Refresh" @click="loadConversations()">刷新</el-button>
         <el-button size="small" :icon="Coin" @click="openStorage">存储</el-button>
+        <el-button v-if="isNarrow && !mobileListOpen" size="small" @click="mobileListOpen = true">
+          会话
+        </el-button>
       </div>
     </div>
 
     <div class="flex flex-1 min-h-0 rounded-lg overflow-hidden border border-gray-200 bg-white shadow-sm">
       <!-- 会话列表 -->
-      <div class="w-64 flex-none border-r border-gray-200 flex flex-col bg-gray-50">
+      <div
+        class="flex-none border-r border-gray-200 flex flex-col bg-gray-50"
+        :class="isNarrow ? (mobileListOpen ? 'w-full' : 'hidden') : 'w-64'">
         <div class="p-2 flex-none">
           <el-input v-model="search" size="small" placeholder="搜索会话" :prefix-icon="Search" clearable />
         </div>
@@ -665,16 +718,28 @@ onBeforeUnmount(() => {
           <div
             v-for="conv in filteredConvs"
             :key="conv.key"
-            class="px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-gray-100 transition"
+            class="px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-gray-100 transition group"
             :class="conv.key === activeKey ? 'bg-sky-50 border-l-2 border-l-sky-500' : ''"
             @click="selectConversation(conv)">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-1 min-w-0">
-                <span class="text-xs">{{ convIcon(conv) }}</span>
+                <el-avatar
+                  v-if="conv.kind === 'c2c' && conv.avatarUrl"
+                  :size="20"
+                  :src="mediaSrc(conv.avatarUrl)" />
+                <span v-else class="text-xs">{{ convIcon(conv) }}</span>
+                <span v-if="conv.pinned" class="text-[10px] text-amber-500">📌</span>
                 <span class="text-sm font-medium truncate">{{ conv.name }}</span>
                 <span v-if="!conv.online" class="text-[10px] text-gray-400">离线</span>
               </div>
-              <span class="text-[10px] text-gray-400 flex-none">{{ formatTime(conv.lastTs) }}</span>
+              <div class="flex items-center gap-1 flex-none">
+                <span
+                  class="text-[11px] cursor-pointer opacity-0 group-hover:opacity-100 transition"
+                  :class="conv.pinned ? 'text-amber-500 opacity-100' : 'text-gray-400'"
+                  :title="conv.pinned ? '取消置顶' : '置顶'"
+                  @click.stop="togglePin(conv)">📌</span>
+                <span class="text-[10px] text-gray-400">{{ formatTime(conv.lastTs) }}</span>
+              </div>
             </div>
             <div class="flex items-center justify-between gap-2 mt-0.5">
               <span class="text-xs text-gray-500 truncate">{{ conv.lastText || '（暂无消息）' }}</span>
@@ -692,7 +757,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 消息区 -->
-      <div class="flex-1 min-w-0 flex flex-col">
+      <div class="min-w-0 flex flex-col" :class="isNarrow && mobileListOpen ? 'hidden' : 'flex-1'">
         <template v-if="activeConv">
           <div class="px-4 py-2 border-b border-gray-200 flex items-center justify-between flex-none">
             <div class="min-w-0">
@@ -706,6 +771,7 @@ onBeforeUnmount(() => {
               <div class="text-[11px] text-gray-400 truncate">{{ activeConv.targetId }}</div>
             </div>
             <div class="flex items-center gap-1 flex-none">
+              <el-button v-if="isNarrow" size="small" text @click="mobileListOpen = true">← 会话</el-button>
               <el-button size="small" text @click="copyTargetId">复制 ID</el-button>
               <el-button size="small" text :icon="Edit" @click="renameCurrent">改名</el-button>
             </div>
@@ -733,7 +799,13 @@ onBeforeUnmount(() => {
               :key="msg.id"
               class="flex gap-2 mb-3 group"
               :class="msg.source === 'console' ? 'flex-row-reverse' : ''">
+              <el-avatar
+                v-if="msg.avatarUrl"
+                :size="28"
+                :src="mediaSrc(msg.avatarUrl)"
+                class="flex-none" />
               <div
+                v-else
                 class="w-7 h-7 rounded-full flex-none flex items-center justify-center text-xs text-white"
                 :class="msg.source === 'console' ? 'bg-sky-500' : msg.source === 'bot' ? 'bg-emerald-500' : 'bg-gray-400'">
                 {{ avatarText(msg) }}
@@ -754,18 +826,19 @@ onBeforeUnmount(() => {
                         {{ msg.quote.sender }}：{{ msg.quote.text }}
                       </div>
                       <span v-if="plainText(msg.text)">{{ plainText(msg.text) }}</span>
+                      <span v-else-if="isPlaceholderMessage(msg)" class="text-xs opacity-70">[表情/图片（无法获取内容）]</span>
                       <div v-if="msg.media && msg.media.length > 0" class="mt-1 flex flex-col gap-1">
                         <template v-for="(m, i) in msg.media" :key="i">
                           <el-image
                             v-if="m.kind === 'image'"
-                            :src="m.url"
-                            :preview-src-list="[m.url]"
+                            :src="mediaSrc(m.url)"
+                            :preview-src-list="[mediaSrc(m.url)]"
                             :preview-teleported="true"
                             fit="cover"
                             class="max-w-[220px] rounded cursor-zoom-in" />
                           <a
                             v-else
-                            :href="m.url"
+                            :href="mediaSrc(m.url)"
                             target="_blank"
                             rel="noreferrer"
                             class="text-xs underline break-all">
