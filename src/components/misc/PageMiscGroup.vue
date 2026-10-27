@@ -63,7 +63,7 @@
                       >{{ item.data.groupId }}</el-text
                     >
                   </el-tooltip>
-                  <el-text>「{{ item.data.groupName || '未获取到' }}」</el-text>
+                  <el-text>「{{ groupDisplayName(item.data) }}」</el-text>
                 </el-space>
               </el-space>
             </template>
@@ -207,6 +207,17 @@ const groupList = ref<any>({});
 const orderByTimeDesc = ref(true);
 const filter30daysUnused = ref(false);
 const searchBy = ref('');
+
+/**
+ * 群名显示：官方 QQ 群的群名要另外走 /v2/groups/{id}/info，
+ * 拉不到时至少显示 openid 后缀，不要只写「未获取到」。
+ */
+function groupDisplayName(data: any) {
+  if (data?.groupName) return data.groupName;
+  const matched = String(data?.groupId || '').match(/^OpenQQ-Group:[^-]+-(.+)$/);
+  if (matched) return '官方群 · ' + matched[1].slice(-6);
+  return '未获取到';
+}
 
 const groupItems = computed<any[]>(() => {
   if (groupList.value.items) {
