@@ -681,22 +681,37 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex flex-col" :style="{ height: 'calc(100vh - 124px)', minHeight: '520px' }">
-    <div class="flex items-center justify-between mb-3 flex-none">
-      <div class="flex items-center gap-2">
-        <el-icon :size="20"><ChatDotRound /></el-icon>
-        <span class="text-lg font-medium">官方 QQ 聊天控制台</span>
-        <el-tag v-if="totalUnread > 0" type="danger" size="small" round>{{ totalUnread }} 条未读</el-tag>
+  <div class="flex flex-col chat-console-shell">
+    <div
+      class="flex-none"
+      :class="isNarrow ? 'flex flex-col gap-1 mb-2' : 'flex items-center justify-between mb-3'">
+      <div class="flex items-center gap-2 min-w-0">
+        <el-icon :size="isNarrow ? 16 : 20"><ChatDotRound /></el-icon>
+        <span
+          class="font-medium truncate whitespace-nowrap"
+          :class="isNarrow ? 'text-base' : 'text-lg'"
+          >官方 QQ 聊天控制台</span
+        >
+        <el-tag v-if="totalUnread > 0" type="danger" size="small" round class="flex-none">
+          {{ totalUnread > 99 ? '99+' : totalUnread }} 条未读
+        </el-tag>
       </div>
-      <div class="flex items-center gap-3 text-xs text-gray-500">
-        <span class="flex items-center gap-1">
+      <div class="flex items-center gap-2 text-xs text-gray-500 flex-none">
+        <span
+          class="flex items-center gap-1 flex-none"
+          :title="connected ? '实时连接中' : '未连接（自动重连）'"
+          :class="isNarrow ? '' : 'gap-1'">
           <span
             class="inline-block w-2 h-2 rounded-full"
             :class="connected ? 'bg-emerald-500' : 'bg-gray-300'"></span>
-          {{ connected ? '实时连接中' : '未连接（自动重连）' }}
+          <span v-if="!isNarrow">{{ connected ? '实时连接中' : '未连接（自动重连）' }}</span>
         </span>
-        <el-button size="small" :icon="Refresh" @click="loadConversations()">刷新</el-button>
-        <el-button size="small" :icon="Coin" @click="openStorage">存储</el-button>
+        <el-button size="small" :icon="Refresh" @click="loadConversations()">
+          <span v-if="!isNarrow">刷新</span>
+        </el-button>
+        <el-button size="small" :icon="Coin" @click="openStorage">
+          <span v-if="!isNarrow">存储</span>
+        </el-button>
         <el-button v-if="isNarrow && !mobileListOpen" size="small" @click="mobileListOpen = true">
           会话
         </el-button>
@@ -759,21 +774,38 @@ onBeforeUnmount(() => {
       <!-- 消息区 -->
       <div class="min-w-0 flex flex-col" :class="isNarrow && mobileListOpen ? 'hidden' : 'flex-1'">
         <template v-if="activeConv">
-          <div class="px-4 py-2 border-b border-gray-200 flex items-center justify-between flex-none">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium truncate">{{ activeConv.name }}</span>
-                <el-tag v-if="activeConv.kind === 'group'" size="small" type="info">
-                  群聊<span v-if="activeConv.memberCount"> · {{ activeConv.memberCount }} 人</span>
-                </el-tag>
-                <el-tag v-else size="small" type="info">私聊</el-tag>
+          <div
+            class="border-b border-gray-200 flex items-center justify-between gap-2 flex-none"
+            :class="isNarrow ? 'px-2 py-1' : 'px-4 py-2'">
+            <div class="min-w-0 flex items-center gap-1">
+              <el-button
+                v-if="isNarrow"
+                size="small"
+                text
+                title="返回会话列表"
+                @click="mobileListOpen = true"
+                >←</el-button
+              >
+              <div class="min-w-0">
+                <div class="flex items-center gap-1 min-w-0">
+                  <span class="text-sm font-medium truncate">{{ activeConv.name }}</span>
+                  <el-tag v-if="!isNarrow && activeConv.kind === 'group'" size="small" type="info">
+                    群聊<span v-if="activeConv.memberCount"> · {{ activeConv.memberCount }} 人</span>
+                  </el-tag>
+                  <el-tag v-else-if="!isNarrow" size="small" type="info">私聊</el-tag>
+                </div>
+                <div v-if="!isNarrow" class="text-[11px] text-gray-400 truncate">
+                  {{ activeConv.targetId }}
+                </div>
               </div>
-              <div class="text-[11px] text-gray-400 truncate">{{ activeConv.targetId }}</div>
             </div>
             <div class="flex items-center gap-1 flex-none">
-              <el-button v-if="isNarrow" size="small" text @click="mobileListOpen = true">← 会话</el-button>
-              <el-button size="small" text @click="copyTargetId">复制 ID</el-button>
-              <el-button size="small" text :icon="Edit" @click="renameCurrent">改名</el-button>
+              <el-button size="small" text @click="copyTargetId">
+                {{ isNarrow ? 'ID' : '复制 ID' }}
+              </el-button>
+              <el-button size="small" text :icon="Edit" @click="renameCurrent">
+                <span v-if="!isNarrow">改名</span>
+              </el-button>
             </div>
           </div>
 
@@ -835,7 +867,14 @@ onBeforeUnmount(() => {
                             :preview-src-list="[mediaSrc(m.url)]"
                             :preview-teleported="true"
                             fit="cover"
-                            class="max-w-[220px] rounded cursor-zoom-in" />
+                            class="max-w-[220px] rounded cursor-zoom-in">
+                            <template #error>
+                              <span class="text-xs opacity-70">[图片已过期，无法重新获取]</span>
+                            </template>
+                            <template #placeholder>
+                              <span class="text-xs opacity-50">加载中…</span>
+                            </template>
+                          </el-image>
                           <a
                             v-else
                             :href="mediaSrc(m.url)"
@@ -881,23 +920,25 @@ onBeforeUnmount(() => {
             <el-input
               v-model="draft"
               type="textarea"
-              :rows="2"
+              :rows="isNarrow ? 1 : 2"
               resize="none"
               maxlength="1500"
               show-word-limit
-              placeholder="以机器人身份发送消息，Enter 发送，Shift+Enter 换行"
+              :placeholder="isNarrow ? '以机器人身份发言，Enter 发送' : '以机器人身份发送消息，Enter 发送，Shift+Enter 换行'"
               @keydown.enter.exact="onEnter" />
 
             <input ref="fileInput" type="file" class="hidden" @change="onFileChange" />
 
-            <div class="flex items-center justify-between mt-2">
-              <div class="flex items-center gap-1">
+            <div class="flex items-center justify-between mt-2 gap-2">
+              <div class="flex items-center gap-1 min-w-0">
                 <el-button
                   size="small"
                   :icon="Paperclip"
                   :loading="uploading"
                   title="发送图片 / 文件（≤30MB）"
-                  @click="pickFile">图片/文件</el-button>
+                  @click="pickFile">
+                  <span v-if="!isNarrow">图片/文件</span>
+                </el-button>
 
                 <el-popover v-if="activeConv.kind === 'group'" placement="top" :width="220" trigger="click">
                   <template #reference>
@@ -917,11 +958,17 @@ onBeforeUnmount(() => {
                   </div>
                 </el-popover>
 
-                <span class="text-[11px] text-gray-400 ml-1">
+                <span v-if="!isNarrow" class="text-[11px] text-gray-400 ml-1 truncate">
                   私聊主动消息受官方额度限制，发送失败会给出原因
                 </span>
               </div>
-              <el-button type="primary" size="small" :icon="Promotion" :loading="sending" @click="send">
+              <el-button
+                type="primary"
+                size="small"
+                :icon="Promotion"
+                :loading="sending"
+                class="flex-none"
+                @click="send">
                 发送
               </el-button>
             </div>
@@ -934,7 +981,10 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <el-dialog v-model="storageDialog" title="存储占用与保留策略" width="680px">
+    <el-dialog
+      v-model="storageDialog"
+      title="存储占用与保留策略"
+      :width="isNarrow ? '94%' : '680px'">
       <div v-loading="storageLoading">
         <div class="flex items-center gap-3 mb-3 flex-wrap">
           <span class="text-sm">保留天数</span>
@@ -982,7 +1032,7 @@ onBeforeUnmount(() => {
       </div>
     </el-dialog>
 
-    <el-dialog v-model="muteDialog" title="禁言群成员" width="420px">
+    <el-dialog v-model="muteDialog" title="禁言群成员" :width="isNarrow ? '94%' : '420px'">
       <div class="text-sm mb-3">
         {{ muteTarget?.name || '' }}
         <span class="text-xs text-gray-400">（{{ muteTarget?.openid }}）</span>
@@ -1000,3 +1050,20 @@ onBeforeUnmount(() => {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+/* 高度：桌面端留出顶栏与页面内边距，移动端尽量吃满视口。
+   dvh 在老 WebView 上不认，所以先用 vh 兜底再覆盖。 */
+.chat-console-shell {
+  height: calc(100vh - 124px);
+  min-height: 520px;
+}
+
+@media (max-width: 768px) {
+  .chat-console-shell {
+    height: calc(100vh - 96px);
+    height: calc(100dvh - 96px);
+    min-height: 420px;
+  }
+}
+</style>
