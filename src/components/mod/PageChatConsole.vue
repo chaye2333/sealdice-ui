@@ -1,6 +1,16 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script lang="ts" setup>
-import { ChatDotRound, Promotion, Refresh, Edit, Search, Paperclip, Close } from '@element-plus/icons-vue';
+import {
+  ChatDotRound,
+  Promotion,
+  Refresh,
+  Edit,
+  Search,
+  Paperclip,
+  Close,
+  Coin,
+  Delete,
+} from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
 import {
   getConversations,
@@ -11,10 +21,14 @@ import {
   postMute,
   postRead,
   postRename,
+  getStorage,
+  postSettings,
+  postPurge,
   type ChatConsoleConversation,
   type ChatConsoleMention,
   type ChatConsoleMessage,
   type ChatConsoleQuote,
+  type ChatConsoleStorage,
 } from '~/api/chat_console';
 
 const conversations = ref<ChatConsoleConversation[]>([]);
@@ -37,6 +51,12 @@ const fileInput = ref<HTMLInputElement>();
 
 const muteDialog = ref(false);
 const muteTarget = ref<{ openid: string; name: string } | null>(null);
+
+const storageDialog = ref(false);
+const storageLoading = ref(false);
+const storage = ref<ChatConsoleStorage | null>(null);
+const retentionInput = ref(30);
+const savingRetention = ref(false);
 
 const listEl = ref<HTMLDivElement>();
 
@@ -329,6 +349,113 @@ async function doMute(seconds: number) {
   }
 }
 
+// ---------------- 存储占用 / 保留天数 / 清空 ----------------
+
+function formatBytes(bytes: number) {
+  if (!bytes || bytes <= 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
+async function loadStorage() {
+  storageLoading.value = true;
+  try {
+    const res = await getStorage();
+    if (res.result) {
+      storage.value = res;
+      retentionInput.value = res.retentionDays;
+    } else {
+      ElMessage.error(res.err || '读取存储占用失败');
+    }
+  } catch {
+    ElMessage.error('读取存储占用失败');
+  } finally {
+    storageLoading.value = false;
+  }
+}
+
+function openStorage() {
+  storageDialog.value = true;
+  loadStorage();
+}
+
+async function saveRetention() {
+  const days = Number(retentionInput.value);
+  if (!Number.isFinite(days) || days < 0) {
+    ElMessage.warning('保留天数不能为负数（0 表示永久保留）');
+    return;
+  }
+  savingRetention.value = true;
+  try {
+    const res = await postSettings(Math.floor(days));
+    if (res.result) {
+      retentionInput.value = res.retentionDays;
+      ElMessage.success(`已保存：保留 ${res.retentionDays === 0 ? '全部历史' : res.retentionDays + ' 天'}`);
+      await loadStorage();
+      await loadConversations(true);
+    } else {
+      ElMessage.error(res.err || '保存失败');
+    }
+  } catch {
+    ElMessage.error('保存失败，请检查连接');
+  } finally {
+    savingRetention.value = false;
+  }
+}
+
+async function purgeConversation(item: { key: string; name?: string }) {
+  try {
+    await ElMessageBox.confirm(
+      `清空「${item.name || item.key}」的全部历史消息？会话本身和群名会保留。`,
+      '清空会话历史',
+      { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await postPurge(item.key, false);
+    if (res.result) {
+      ElMessage.success('已清空');
+      await loadStorage();
+      if (item.key === activeKey.value) await loadMessages();
+      await loadConversations(true);
+    } else {
+      ElMessage.error(res.err || '清空失败');
+    }
+  } catch {
+    ElMessage.error('清空失败，请检查连接');
+  }
+}
+
+async function purgeAll() {
+  try {
+    await ElMessageBox.confirm(
+      '清空全部会话历史（所有群/私聊，不可恢复）？保留天数设置会保留。',
+      '清空全部历史',
+      { confirmButtonText: '全部清空', cancelButtonText: '取消', type: 'error' },
+    );
+  } catch {
+    return;
+  }
+  try {
+    const res = await postPurge(undefined, true);
+    if (res.result) {
+      messages.value = [];
+      activeKey.value = '';
+      ElMessage.success('已清空全部历史');
+      await loadStorage();
+      await loadConversations(true);
+    } else {
+      ElMessage.error(res.err || '清空失败');
+    }
+  } catch {
+    ElMessage.error('清空失败，请检查连接');
+  }
+}
+
 // ---------------- 图片 / 文件 ----------------
 
 function pickFile() {
@@ -521,6 +648,7 @@ onBeforeUnmount(() => {
           {{ connected ? '实时连接中' : '未连接（自动重连）' }}
         </span>
         <el-button size="small" :icon="Refresh" @click="loadConversations()">刷新</el-button>
+        <el-button size="small" :icon="Coin" @click="openStorage">存储</el-button>
       </div>
     </div>
 
@@ -732,6 +860,54 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <el-dialog v-model="storageDialog" title="存储占用与保留策略" width="680px">
+      <div v-loading="storageLoading">
+        <div class="flex items-center gap-3 mb-3 flex-wrap">
+          <span class="text-sm">保留天数</span>
+          <el-input-number v-model="retentionInput" :min="0" :max="3650" :step="1" size="small" />
+          <el-button size="small" type="primary" :loading="savingRetention" @click="saveRetention">
+            保存
+          </el-button>
+          <span class="text-xs text-gray-400">0 = 永久保留；保存后立刻按新规则清理一次</span>
+        </div>
+
+        <div class="text-xs text-gray-500 mb-2">
+          合计占用 <b>{{ formatBytes(storage?.totalBytes || 0) }}</b>
+          · 会话 {{ storage?.conversations?.length || 0 }} 个
+          · 媒体只存链接、不存原件
+        </div>
+
+        <el-table :data="storage?.conversations || []" height="340" size="small" border>
+          <el-table-column label="会话" min-width="200">
+            <template #default="{ row }">
+              <span>{{ row.name || row.key }}</span>
+              <span class="text-[10px] text-gray-400 ml-1">
+                {{ row.kind === 'group' ? '群' : row.kind === 'c2c' ? '私聊' : '' }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="消息" width="90" prop="messages" />
+          <el-table-column label="天数" width="80" prop="days" />
+          <el-table-column label="占用" width="110">
+            <template #default="{ row }">{{ formatBytes(row.bytes) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-button link type="danger" size="small" :icon="Delete" @click="purgeConversation(row)">
+                清空
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="flex justify-end mt-3">
+          <el-button size="small" type="danger" plain :icon="Delete" @click="purgeAll">
+            清空全部历史
+          </el-button>
+        </div>
+      </div>
+    </el-dialog>
 
     <el-dialog v-model="muteDialog" title="禁言群成员" width="420px">
       <div class="text-sm mb-3">

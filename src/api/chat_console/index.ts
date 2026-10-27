@@ -51,6 +51,23 @@ export interface ChatConsoleConversation {
   online: boolean;
 }
 
+export interface ChatConsoleUsage {
+  key: string;
+  name?: string;
+  kind?: string;
+  bytes: number;
+  messages: number;
+  days: number;
+  oldestTs?: number;
+  newestTs?: number;
+}
+
+export interface ChatConsoleStorage {
+  totalBytes: number;
+  retentionDays: number;
+  conversations: ChatConsoleUsage[];
+}
+
 type FailResponse = { result: false; err?: string };
 type OkResponse<T> = { result: true } & T;
 
@@ -119,4 +136,24 @@ export async function postRename(key: string, name: string) {
     'rename',
     { key, name },
   );
+}
+
+/** 存储占用 + 保留天数 */
+export async function getStorage() {
+  return await request<FailResponse | OkResponse<ChatConsoleStorage>>('get', 'storage');
+}
+
+/** 调整保留天数；0 = 永久保留 */
+export async function postSettings(retentionDays: number) {
+  return await request<FailResponse | OkResponse<{ retentionDays: number }>>('post', 'settings', {
+    retentionDays,
+  });
+}
+
+/** 清空单个会话（传 key）或全部（all=true） */
+export async function postPurge(key?: string, all = false) {
+  return await request<FailResponse | OkResponse<Record<string, never>>>('post', 'purge', {
+    key,
+    all,
+  });
 }
