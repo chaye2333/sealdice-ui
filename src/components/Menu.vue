@@ -70,6 +70,10 @@
       <el-menu-item index="/mod/censor">
         <span>拦截管理</span>
       </el-menu-item>
+
+      <el-menu-item index="/mod/chat-console">
+        <span>聊天控制台</span>
+      </el-menu-item>
     </el-sub-menu>
 
     <el-sub-menu index="/misc">

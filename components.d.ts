@@ -98,6 +98,7 @@ declare module 'vue' {
     PackageInstalledDrawer: typeof import('./src/components/mod/package/PackageInstalledDrawer.vue')['default']
     PageAbout: typeof import('./src/components/PageAbout.vue')['default']
     PageCensor: typeof import('./src/components/mod/PageCensor.vue')['default']
+    PageChatConsole: typeof import('./src/components/mod/PageChatConsole.vue')['default']
     PageConnectInfoItems: typeof import('./src/components/PageConnectInfoItems.vue')['default']
     PageCustomReply: typeof import('./src/components/mod/PageCustomReply.vue')['default']
     PageCustomText: typeof import('./src/components/PageCustomText.vue')['default']
