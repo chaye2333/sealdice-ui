@@ -329,14 +329,22 @@ async function toggleGroupBan(data: any) {
   }
   banBusy.value[groupId] = true;
   try {
+    let res: any;
     if (banned) {
-      await postMapDelOne({ ID: groupId, name, rank: BAN_RANK_BANNED, reason: '' } as any);
-      ElMessage.success('已解除拉黑');
+      res = await postMapDelOne({ ID: groupId, name, rank: BAN_RANK_BANNED, reason: '' } as any);
     } else {
-      await postMapAddOne(groupId, BAN_RANK_BANNED, name === '未获取到' ? '' : name, '骰主后台设置');
-      ElMessage.success('已拉黑');
+      res = await postMapAddOne(groupId, BAN_RANK_BANNED, name === '未获取到' ? '' : name, '骰主后台设置');
     }
+    // 不轻信 200：展示模式 / 没有可用账号时后端只是没做事，重新拉名单确认
     await loadBanList();
+    const applied = banned ? !isGroupBanned(groupId) : isGroupBanned(groupId);
+    if (applied) {
+      ElMessage.success(banned ? '已解除拉黑' : '已拉黑');
+    } else if (res?.testMode) {
+      ElMessage.warning('展示模式不支持修改黑白名单');
+    } else {
+      ElMessage.warning('名单没有变化，请到「拦截管理」里确认一下');
+    }
   } catch (e: any) {
     ElMessage.error(`操作失败：${e?.message || e}`);
   } finally {

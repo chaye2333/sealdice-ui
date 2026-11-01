@@ -638,16 +638,33 @@ const hasGroupProfile = computed(() => {
   );
 });
 
+/** 群资料的指纹：用来判断「刷新」到底有没有拿到新东西 */
+function groupProfileSignature(conv: ChatConsoleConversation | null) {
+  if (!conv) return '';
+  return [
+    conv.name || '',
+    conv.memberCount || 0,
+    conv.fingerMemo || '',
+    conv.classText || '',
+    (conv.tags || []).join(','),
+  ].join('\u0001');
+}
+
 /** 手动向官方接口要一次群资料（简介 / 分类 / 标签 / 人数） */
 async function refreshGroupProfile() {
   const conv = activeConv.value;
   if (!conv) return;
   infoLoading.value = true;
+  const before = groupProfileSignature(conv);
   try {
     const res = await postGroupInfo(conv.key);
     if (res.result) {
       upsertConversation(res.conversation);
-      ElMessage.success('群资料已更新');
+      if (groupProfileSignature(activeConv.value) === before) {
+        ElMessage.info('群资料没有变化（可能刚查过，3 秒内的重复查询会直接用缓存）');
+      } else {
+        ElMessage.success('群资料已更新');
+      }
     } else {
       ElMessage.error(res.err || '查询群资料失败');
     }
