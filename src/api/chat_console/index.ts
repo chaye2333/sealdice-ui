@@ -72,6 +72,16 @@ export interface ChatConsoleStorage {
   conversations: ChatConsoleUsage[];
 }
 
+export interface ChatConsoleSearchMessage extends ChatConsoleMessage {
+  conversationKey: string;
+  conversationName: string;
+}
+
+export interface ChatConsoleSearchResult {
+  conversations: ChatConsoleConversation[];
+  messages: ChatConsoleSearchMessage[];
+}
+
 type FailResponse = { result: false; err?: string };
 type OkResponse<T> = { result: true } & T;
 
@@ -140,6 +150,14 @@ export async function postRename(key: string, name: string) {
     'rename',
     { key, name },
   );
+}
+
+/** 搜索：会话名 / openid / dice 平台 ID / 消息正文 / 发送者昵称 */
+export async function searchChatConsole(q: string, limit = 30) {
+  return await request<FailResponse | OkResponse<ChatConsoleSearchResult>>('get', 'search', {
+    q,
+    limit,
+  });
 }
 
 /** 存储占用 + 保留天数 */

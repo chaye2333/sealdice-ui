@@ -25,10 +25,13 @@ import {
   getStorage,
   postSettings,
   postPurge,
+  searchChatConsole,
   type ChatConsoleConversation,
   type ChatConsoleMention,
   type ChatConsoleMessage,
   type ChatConsoleQuote,
+  type ChatConsoleSearchMessage,
+  type ChatConsoleSearchResult,
   type ChatConsoleStorage,
 } from '~/api/chat_console';
 
@@ -37,6 +40,11 @@ const activeKey = ref('');
 const messages = ref<ChatConsoleMessage[]>([]);
 const search = ref('');
 const draft = ref('');
+// 远程搜索（会话名 / openid / dice 平台 ID / 消息正文 / 昵称）
+const searchResult = ref<ChatConsoleSearchResult | null>(null);
+const searching = ref(false);
+const highlightedId = ref('');
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
 const loadingConvs = ref(false);
 const loadingMsgs = ref(false);
@@ -84,6 +92,58 @@ const filteredConvs = computed(() => {
 });
 
 const totalUnread = computed(() => conversations.value.reduce((n, c) => n + (c.unread || 0), 0));
+
+/** 左栏显示的会话：搜索时用后端搜索结果（支持 dice 平台 ID / 昵称 / 关键词） */
+const listConvs = computed<ChatConsoleConversation[]>(() =>
+  searchResult.value ? searchResult.value.conversations : filteredConvs.value,
+);
+
+// 搜索词变化后防抖请求后端
+watch(search, () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  const q = search.value.trim();
+  if (q.length < 2) {
+    searchResult.value = null;
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    searching.value = true;
+    try {
+      const res = await searchChatConsole(q, 30);
+      if (res.result) searchResult.value = res;
+    } catch {
+      // 搜索失败不打断输入
+    } finally {
+      searching.value = false;
+    }
+  }, 250);
+});
+
+/** 点击搜索结果：打开会话、定位到那条消息并高亮 */
+async function openSearchHit(hit: ChatConsoleSearchMessage) {
+  if (!conversations.value.some(c => c.key === hit.conversationKey)) {
+    const conv = searchResult.value?.conversations.find(c => c.key === hit.conversationKey);
+    if (conv) conversations.value.unshift(conv);
+  }
+  activeKey.value = hit.conversationKey;
+  if (isNarrow.value) mobileListOpen.value = false;
+  highlightedId.value = hit.id;
+  loadingMsgs.value = true;
+  try {
+    const res = await getMessages({ key: hit.conversationKey, before: hit.ts + 1, limit: 50 });
+    if (res.result) {
+      messages.value = res.messages;
+      hasMore.value = res.hasMore;
+      nextTick(() => {
+        document
+          .getElementById('cc-msg-' + hit.id)
+          ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+  } finally {
+    loadingMsgs.value = false;
+  }
+}
 
 /** 从历史消息里归纳出可 @ 的群成员 */
 const members = computed(() => {
@@ -724,14 +784,26 @@ onBeforeUnmount(() => {
         class="flex-none border-r border-gray-200 flex flex-col bg-gray-50"
         :class="isNarrow ? (mobileListOpen ? 'w-full' : 'hidden') : 'w-64'">
         <div class="p-2 flex-none">
-          <el-input v-model="search" size="small" placeholder="搜索会话" :prefix-icon="Search" clearable />
+          <el-input
+            v-model="search"
+            size="small"
+            placeholder="搜群名 / openid / OpenQQ 平台 ID / 昵称 / 聊天内容"
+            :prefix-icon="Search"
+            clearable />
         </div>
-        <div v-loading="loadingConvs" class="flex-1 overflow-y-auto">
-          <div v-if="filteredConvs.length === 0" class="text-center text-xs text-gray-400 py-8 px-4">
+        <div v-loading="loadingConvs || searching" class="flex-1 overflow-y-auto">
+          <div
+            v-if="!searchResult && listConvs.length === 0"
+            class="text-center text-xs text-gray-400 py-8 px-4">
             还没有记录到官方 QQ 消息。<br />等机器人收到消息后会自动出现。
           </div>
           <div
-            v-for="conv in filteredConvs"
+            v-if="searchResult"
+            class="px-3 pt-2 pb-1 text-[11px] text-gray-400 border-b border-gray-100">
+            会话（{{ listConvs.length }}）
+          </div>
+          <div
+            v-for="conv in listConvs"
             :key="conv.key"
             class="px-3 py-2 cursor-pointer border-b border-gray-100 hover:bg-gray-100 transition group"
             :class="conv.key === activeKey ? 'bg-sky-50 border-l-2 border-l-sky-500' : ''"
@@ -764,9 +836,35 @@ onBeforeUnmount(() => {
                 {{ conv.unread > 99 ? '99+' : conv.unread }}
               </span>
             </div>
+            <div class="text-[10px] text-gray-400 truncate mt-0.5">{{ conv.targetId }}</div>
             <div v-if="conv.kind === 'group' && !conv.fullMessage" class="mt-1">
               <el-tag size="small" type="warning" effect="plain">仅 @ 消息</el-tag>
             </div>
+          </div>
+
+          <template v-if="searchResult && searchResult.messages.length > 0">
+            <div class="px-3 pt-2 pb-1 text-[11px] text-gray-400 border-b border-gray-100">
+              消息（{{ searchResult.messages.length }}）
+            </div>
+            <div
+              v-for="hit in searchResult.messages"
+              :key="hit.id"
+              class="px-3 py-2 border-b border-gray-100 hover:bg-gray-100 cursor-pointer"
+              @click="openSearchHit(hit)">
+              <div class="text-[11px] text-gray-500 truncate">
+                <span class="text-gray-700">{{ hit.senderName || '未知' }}</span>
+                · {{ hit.conversationName }}
+                · {{ formatTime(hit.ts) }}
+              </div>
+              <div class="text-xs text-gray-700 truncate">
+                {{ plainText(hit.text) || '[非文本消息]' }}
+              </div>
+            </div>
+          </template>
+          <div
+            v-if="searchResult && listConvs.length === 0 && searchResult.messages.length === 0"
+            class="text-center text-xs text-gray-400 py-8 px-4">
+            没有匹配的会话或消息
           </div>
         </div>
       </div>
@@ -828,9 +926,13 @@ onBeforeUnmount(() => {
 
             <div
               v-for="msg in messages"
+              :id="'cc-msg-' + msg.id"
               :key="msg.id"
-              class="flex gap-2 mb-3 group"
-              :class="msg.source === 'console' ? 'flex-row-reverse' : ''">
+              class="flex gap-2 mb-3 group rounded transition-colors"
+              :class="[
+                msg.source === 'console' ? 'flex-row-reverse' : '',
+                msg.id === highlightedId ? 'bg-amber-50' : '',
+              ]">
               <el-avatar
                 v-if="msg.avatarUrl"
                 :size="28"
