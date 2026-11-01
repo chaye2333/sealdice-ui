@@ -64,6 +64,16 @@
                     >
                   </el-tooltip>
                   <el-text>「{{ groupDisplayName(item.data) }}」</el-text>
+                  <el-tag
+                    v-if="isGroupBanned(item.data.groupId)"
+                    type="danger"
+                    size="small"
+                    disable-transitions
+                    >已拉黑</el-tag
+                  >
+                  <el-tag v-else-if="groupBanTag(item.data.groupId)" type="warning" size="small" disable-transitions
+                    >{{ groupBanTag(item.data.groupId) }}</el-tag
+                  >
                 </el-space>
               </el-space>
             </template>
@@ -78,6 +88,23 @@
                 @click="saveOne(item.data, item.index)"
                 >保存</el-button
               >
+              <el-tooltip
+                :content="
+                  isGroupBanned(item.data.groupId)
+                    ? '从黑名单移除，机器人恢复响应这个群'
+                    : '把群加入黑名单，机器人不再响应这个群的任何消息'
+                "
+                placement="top">
+                <el-button
+                  :type="isGroupBanned(item.data.groupId) ? 'warning' : 'danger'"
+                  size="small"
+                  :icon="isGroupBanned(item.data.groupId) ? CircleCheck : CircleClose"
+                  plain
+                  :loading="banBusy[item.data.groupId]"
+                  @click="toggleGroupBan(item.data)"
+                  >{{ isGroupBanned(item.data.groupId) ? '解除拉黑' : '拉黑' }}</el-button
+                >
+              </el-tooltip>
               <template v-if="item.data.groupId.startsWith('QQ-Group:')">
                 <el-tooltip
                   v-for="(_, j) in item.data.diceIdExistsMap"
@@ -143,6 +170,32 @@
                   item.data.inviteUserId || '未知'
                 }}</el-descriptions-item>
               </el-descriptions>
+              <el-descriptions
+                v-if="
+                  item.data.tmpFingerMemo ||
+                  item.data.tmpClassText ||
+                  (item.data.tmpGroupTags && item.data.tmpGroupTags.length)
+                ">
+                <el-descriptions-item v-if="item.data.tmpClassText" label="群分类">{{
+                  item.data.tmpClassText
+                }}</el-descriptions-item>
+                <el-descriptions-item
+                  v-if="item.data.tmpGroupTags && item.data.tmpGroupTags.length"
+                  :span="2"
+                  label="群标签">
+                  <el-tag
+                    v-for="tag of item.data.tmpGroupTags"
+                    :key="tag"
+                    size="small"
+                    style="margin-right: 0.5rem"
+                    disable-transitions
+                    >{{ tag }}</el-tag
+                  >
+                </el-descriptions-item>
+                <el-descriptions-item v-if="item.data.tmpFingerMemo" :span="3" label="群简介">
+                  <span style="white-space: pre-wrap">{{ item.data.tmpFingerMemo }}</span>
+                </el-descriptions-item>
+              </el-descriptions>
             </template>
           </foldable-card>
         </div>
@@ -192,10 +245,11 @@
 </template>
 
 <script lang="ts" setup>
-import { DocumentChecked, Close } from '@element-plus/icons-vue';
+import { CircleCheck, CircleClose, Close, DocumentChecked } from '@element-plus/icons-vue';
 import * as dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { now, sortBy } from 'lodash-es';
+import { getBanConfigList, postMapAddOne, postMapDelOne } from '~/api/banconfig';
 import { getGroupList, postQuitGroup, setGroup } from '~/api/group';
 
 dayjs.extend(relativeTime);
@@ -207,6 +261,88 @@ const groupList = ref<any>({});
 const orderByTimeDesc = ref(true);
 const filter30daysUnused = ref(false);
 const searchBy = ref('');
+
+/** 黑白名单里和群相关的条目，key 为群 ID（如 QQ-Group:123 / OpenQQ-Group:xxx-yyy）。 */
+const banMap = ref<Record<string, any>>({});
+const banBusy = ref<Record<string, boolean>>({});
+
+const BAN_RANK_BANNED = -30;
+
+const findBanItem = (groupId: string) => banMap.value[groupId];
+
+function isGroupBanned(groupId: string) {
+  return findBanItem(groupId)?.rank === BAN_RANK_BANNED;
+}
+
+/** 名单等级文案（后端只给数字 rank，没有文案字段） */
+function banRankText(rank: number) {
+  switch (rank) {
+    case 30:
+      return '信任';
+    case -30:
+      return '禁止';
+    case -10:
+      return '警告';
+    default:
+      return '';
+  }
+}
+
+function groupBanTag(groupId: string) {
+  const item = findBanItem(groupId);
+  return item ? banRankText(item.rank) : '';
+}
+
+async function loadBanList() {
+  try {
+    const list = await getBanConfigList();
+    const m: Record<string, any> = {};
+    for (const it of (list as any[]) || []) {
+      if (it?.ID) m[it.ID] = it;
+    }
+    banMap.value = m;
+  } catch {
+    // 名单拉不到不影响群列表本身
+  }
+}
+
+/** 快捷拉黑 / 解除拉黑：黑名单里的群机器人不会再响应。 */
+async function toggleGroupBan(data: any) {
+  const groupId: string = data?.groupId;
+  if (!groupId) return;
+  const banned = isGroupBanned(groupId);
+  const name = groupDisplayName(data);
+  try {
+    await ElMessageBox.confirm(
+      banned
+        ? `解除对群「${name}」的拉黑？解除后机器人会重新响应这个群。`
+        : `把群「${name}」拉入黑名单？拉黑后机器人不再响应这个群的任何消息。`,
+      banned ? '解除拉黑' : '拉黑该群',
+      {
+        confirmButtonText: banned ? '解除' : '拉黑',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
+  banBusy.value[groupId] = true;
+  try {
+    if (banned) {
+      await postMapDelOne({ ID: groupId, name, rank: BAN_RANK_BANNED, reason: '' } as any);
+      ElMessage.success('已解除拉黑');
+    } else {
+      await postMapAddOne(groupId, BAN_RANK_BANNED, name === '未获取到' ? '' : name, '骰主后台设置');
+      ElMessage.success('已拉黑');
+    }
+    await loadBanList();
+  } catch (e: any) {
+    ElMessage.error(`操作失败：${e?.message || e}`);
+  } finally {
+    banBusy.value[groupId] = false;
+  }
+}
 
 /**
  * 群名显示：官方 QQ 群的群名要另外走 /v2/groups/{id}/info，
@@ -340,7 +476,7 @@ const quitGroup = async (i: any, index: number, diceId: string) => {
 };
 
 onBeforeMount(async () => {
-  await refreshList();
+  await Promise.all([refreshList(), loadBanList()]);
 });
 </script>
 

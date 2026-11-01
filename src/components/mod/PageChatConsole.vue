@@ -10,6 +10,7 @@ import {
   Close,
   Coin,
   Delete,
+  InfoFilled,
 } from '@element-plus/icons-vue';
 import dayjs from 'dayjs';
 import {
@@ -26,6 +27,7 @@ import {
   postSettings,
   postPurge,
   searchChatConsole,
+  postGroupInfo,
   type ChatConsoleConversation,
   type ChatConsoleMention,
   type ChatConsoleMessage,
@@ -76,6 +78,10 @@ const storageLoading = ref(false);
 const storage = ref<ChatConsoleStorage | null>(null);
 const retentionInput = ref(30);
 const savingRetention = ref(false);
+
+// 群资料（官方 /v2/groups/{id}/info 才有简介、分类、标签）
+const infoDialog = ref(false);
+const infoLoading = ref(false);
 
 const listEl = ref<HTMLDivElement>();
 
@@ -620,6 +626,38 @@ async function copyTargetId() {
   }
 }
 
+/** 官方群资料里是否有任意一项可展示的内容 */
+const hasGroupProfile = computed(() => {
+  const conv = activeConv.value;
+  if (!conv) return false;
+  return !!(
+    conv.fingerMemo ||
+    conv.classText ||
+    (conv.tags && conv.tags.length) ||
+    conv.memberCount
+  );
+});
+
+/** 手动向官方接口要一次群资料（简介 / 分类 / 标签 / 人数） */
+async function refreshGroupProfile() {
+  const conv = activeConv.value;
+  if (!conv) return;
+  infoLoading.value = true;
+  try {
+    const res = await postGroupInfo(conv.key);
+    if (res.result) {
+      upsertConversation(res.conversation);
+      ElMessage.success('群资料已更新');
+    } else {
+      ElMessage.error(res.err || '查询群资料失败');
+    }
+  } catch (e: any) {
+    ElMessage.error(`查询群资料失败：${e?.message || e}`);
+  } finally {
+    infoLoading.value = false;
+  }
+}
+
 // ---------------- 实时推送（SSE）----------------
 
 let eventSource: EventSource | null = null;
@@ -904,6 +942,14 @@ onBeforeUnmount(() => {
               <el-button size="small" text :icon="Edit" @click="renameCurrent">
                 <span v-if="!isNarrow">改名</span>
               </el-button>
+              <el-button
+                v-if="activeConv.kind === 'group'"
+                size="small"
+                text
+                :icon="InfoFilled"
+                @click="infoDialog = true">
+                <span v-if="!isNarrow">资料</span>
+              </el-button>
             </div>
           </div>
 
@@ -1132,6 +1178,45 @@ onBeforeUnmount(() => {
           </el-button>
         </div>
       </div>
+    </el-dialog>
+
+    <el-dialog v-model="infoDialog" title="群资料" :width="isNarrow ? '94%' : '520px'">
+      <div class="text-sm flex flex-col gap-2">
+        <div class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">群名</span>
+          <span class="break-all">{{ activeConv?.name }}</span>
+        </div>
+        <div class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">群号</span>
+          <span class="break-all text-xs">{{ activeConv?.targetId }}</span>
+        </div>
+        <div v-if="activeConv?.memberCount" class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">人数</span>
+          <span>{{ activeConv.memberCount }}</span>
+        </div>
+        <div v-if="activeConv?.classText" class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">分类</span>
+          <span>{{ activeConv.classText }}</span>
+        </div>
+        <div v-if="activeConv?.tags && activeConv.tags.length" class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">标签</span>
+          <span class="flex flex-wrap gap-1">
+            <el-tag v-for="t in activeConv.tags" :key="t" size="small" disable-transitions>{{ t }}</el-tag>
+          </span>
+        </div>
+        <div v-if="activeConv?.fingerMemo" class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">简介</span>
+          <span class="whitespace-pre-wrap break-all">{{ activeConv.fingerMemo }}</span>
+        </div>
+        <div v-if="!hasGroupProfile" class="text-xs text-gray-400">
+          还没有拿到这个群的资料。官方接口只在群名/资料查询成功后才返回简介、分类、标签，
+          点「刷新」再试一次，或等群里收到新消息后自动更新。
+        </div>
+      </div>
+      <template #footer>
+        <el-button size="small" :loading="infoLoading" @click="refreshGroupProfile">刷新</el-button>
+        <el-button size="small" type="primary" @click="infoDialog = false">关闭</el-button>
+      </template>
     </el-dialog>
 
     <el-dialog v-model="muteDialog" title="禁言群成员" :width="isNarrow ? '94%' : '420px'">

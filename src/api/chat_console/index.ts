@@ -45,6 +45,9 @@ export interface ChatConsoleConversation {
   name: string;
   nameManual: boolean;
   memberCount?: number;
+  fingerMemo?: string;
+  classText?: string;
+  tags?: string[];
   fullMessage: boolean;
   pinned: boolean;
   avatarUrl?: string;
@@ -149,6 +152,15 @@ export async function postRename(key: string, name: string) {
     'post',
     'rename',
     { key, name },
+  );
+}
+
+/** 立刻查一次官方群资料（简介 / 分类 / 标签 / 人数） */
+export async function postGroupInfo(key: string) {
+  return await request<FailResponse | OkResponse<{ conversation: ChatConsoleConversation }>>(
+    'post',
+    'group-info',
+    { key },
   );
 }
 
