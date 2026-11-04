@@ -35,7 +35,7 @@
     <div v-bind="containerProps" style="height: calc(100vh - 22.5rem)">
       <div v-bind="wrapperProps">
         <div v-for="item in list" :key="item.index" style="">
-          <foldable-card style="margin-top: 1rem">
+          <foldable-card class="group-card" style="margin-top: 1rem">
             <template #title>
               <el-space class="item-header" size="large" alignment="center">
                 <el-switch
@@ -52,12 +52,7 @@
                     trigger="click"
                     :show-after="100">
                     <el-text
-                      style="
-                        max-width: 23rem;
-                        overflow: hidden;
-                        white-space: nowrap;
-                        text-overflow: ellipsis;
-                      "
+                      class="group-id-text"
                       size="large"
                       tag="strong"
                       >{{ item.data.groupId }}</el-text
@@ -517,5 +512,60 @@ span.left {
   flex-wrap: wrap;
   gap: 1rem;
   justify-content: space-between;
+}
+
+/* 群 ID 可能很长（OpenQQ-Group:<uin>-<openid>），超出用省略号，别硬撑宽度 */
+.group-id-text {
+  display: inline-block;
+  max-width: 23rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+/*
+ * 长 ID 不能把右侧按钮挤出卡片（窄屏尤其明显）：
+ * 标题行允许换行，标题区允许收缩，el-space 的每一层也放开 min-width，
+ * 省略号才能生效、按钮才留在可视区内。
+ */
+.group-card .header .title {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.group-card .header .title-warp,
+.group-card .header .title-warp .item-header,
+.group-card .header .title-warp .el-space,
+.group-card .header .title-warp .el-space__item {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.group-card .header .title-warp .el-space__item {
+  overflow: hidden;
+}
+
+.group-card .header .title-extra {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@media screen and (max-width: 700px) {
+  /*
+   * 窄屏：长 ID 直接换行而不是省略。
+   * 换行后这一行的 min-content 只有一个字符宽，按钮才不会被挤到卡片外
+   * （el-card 是 overflow:hidden，被挤出去就等于"按钮不见了"）。
+   */
+  .group-id-text {
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-all;
+    overflow: visible;
+  }
+
+  .group-card .header .title-warp {
+    margin-right: 0;
+  }
 }
 </style>
