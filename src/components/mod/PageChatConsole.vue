@@ -399,6 +399,8 @@ function startQuote(msg: ChatConsoleMessage) {
   quote.value = {
     sender: senderLabel(msg),
     text: plainText(msg.text).slice(0, 200) || '[非文本消息]',
+    // 只有"收到的消息"才能做被动回复；后端还会检查 4 分钟窗口，超窗口自动退回正文前缀
+    msgId: msg.dir === 'in' ? msg.msgId : undefined,
   };
 }
 
@@ -1067,6 +1069,12 @@ onBeforeUnmount(() => {
             <!-- 引用条 -->
             <div v-if="quote" class="mb-2 px-2 py-1 rounded bg-gray-100 text-xs text-gray-600 flex items-start gap-2">
               <span class="flex-1 break-all">回复 {{ quote.sender }}：{{ quote.text }}</span>
+              <el-tag v-if="quote.msgId" size="small" type="success" disable-transitions title="引用会以被动回复发送（收到后 4 分钟内有效）"
+                >引用</el-tag
+              >
+              <el-tag v-else size="small" disable-transitions title="官方不支持主动消息挂引用，会以「回复 某人：原文」的形式出现在正文里"
+                >正文引用</el-tag
+              >
               <el-button link size="small" :icon="Close" @click="quote = null" />
             </div>
 
@@ -1123,8 +1131,8 @@ onBeforeUnmount(() => {
                   </div>
                 </el-popover>
 
-                <span v-if="!isNarrow" class="text-[11px] text-gray-400 ml-1 truncate">
-                  私聊主动消息受官方额度限制，发送失败会给出原因
+                <span v-if="!isNarrow" class="text-[11px] text-gray-400 ml-1 truncate" title="正文支持 CQ 码：&#91;CQ:at,qq=openid&#93; 会被翻成官方 @，&#91;CQ:reply,id=msgId&#93; 走被动回复做真引用">
+                  私聊主动消息受官方额度限制；正文支持 &#91;CQ:at,qq=openid&#93; / &#91;CQ:reply,id=msgId&#93;
                 </span>
               </div>
               <el-button

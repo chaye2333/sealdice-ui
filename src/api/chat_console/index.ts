@@ -11,6 +11,8 @@ export interface ChatConsoleMedia {
 export interface ChatConsoleQuote {
   sender: string;
   text: string;
+  /** 被引用消息的 msg_id：带上它后端会走被动回复（真引用），超出窗口才退回正文前缀 */
+  msgId?: string;
 }
 
 export interface ChatConsoleMention {
