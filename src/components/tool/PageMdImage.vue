@@ -33,6 +33,24 @@ const uploadDisabled = computed(
   () => uploading.value || (loaded.value && bots.value.length === 0) || total.value >= LIMIT,
 );
 
+/** 把 axios 错误翻成可读文案：403 基本都是没登录/登录过期。 */
+function describeError(error: any, fallback: string) {
+  if (error?.response?.status === 403) {
+    return '未登录或登录已过期：请刷新页面重新登录后再试';
+  }
+  const msg = error?.message || '';
+  return msg ? `${fallback}：${msg}` : fallback;
+}
+
+/** 老 UI 在 main.ts 里先登录再挂载，这里再兜一层等待 token。 */
+async function waitForToken(): Promise<boolean> {
+  for (let i = 0; i < 20; i++) {
+    if (localStorage.getItem('t')) return true;
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  return !!localStorage.getItem('t');
+}
+
 function apiBase() {
   const path = window.location.pathname;
   const dir = path.substring(0, path.lastIndexOf('/') + 1);
@@ -103,7 +121,7 @@ async function reload() {
     total.value = res.total || 0;
     nextCursor.value = res.nextCursor || '';
   } catch (e: any) {
-    errorText.value = e?.message || '加载图片列表失败';
+    errorText.value = describeError(e, '加载图片列表失败');
   } finally {
     loading.value = false;
     loaded.value = true;
@@ -124,7 +142,7 @@ async function loadMore() {
     total.value = res.total || total.value;
     nextCursor.value = res.nextCursor || '';
   } catch (e: any) {
-    ElMessage.error(`加载更多图片失败：${e?.message || e}`);
+    ElMessage.error(describeError(e, '加载更多图片失败'));
   } finally {
     loadingMore.value = false;
   }
@@ -164,7 +182,7 @@ async function beforeUpload(file: any) {
     }
     ElMessage.success('上传成功，已自动记住图片宽高');
   } catch (e: any) {
-    ElMessage.error(`上传图片失败：${e?.message || e}`);
+    ElMessage.error(describeError(e, '上传图片失败'));
   } finally {
     uploading.value = false;
   }
@@ -223,12 +241,17 @@ async function remove(item: OfficialQQMediaImage) {
     total.value = Math.max(0, total.value - 1);
     ElMessage.success('已删除');
   } catch (e: any) {
-    ElMessage.error(`删除图片失败：${e?.message || e}`);
+    ElMessage.error(describeError(e, '删除图片失败'));
   }
 }
 
-onBeforeMount(() => {
-  reload();
+onBeforeMount(async () => {
+  if (!(await waitForToken())) {
+    errorText.value = '未登录或登录已过期：请刷新页面重新登录后再试';
+    loaded.value = true;
+    return;
+  }
+  await reload();
 });
 </script>
 
