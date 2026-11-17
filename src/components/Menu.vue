@@ -121,6 +121,10 @@
         <span>指令测试</span>
       </el-menu-item>
 
+      <el-menu-item index="/tool/md-image">
+        <span>MD 图片管理</span>
+      </el-menu-item>
+
       <el-menu-item index="/tool/resource">
         <span>资源管理</span>
       </el-menu-item>

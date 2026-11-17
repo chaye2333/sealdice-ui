@@ -50,6 +50,8 @@ export interface ChatConsoleConversation {
   fingerMemo?: string;
   classText?: string;
   tags?: string[];
+  /** 官方用户资料里的 allow_proactive_msg（只有私聊有值；undefined = 还没查过）。 */
+  allowProactiveMsg?: boolean;
   fullMessage: boolean;
   pinned: boolean;
   avatarUrl?: string;
@@ -131,10 +133,14 @@ export async function postUpload(key: string, file: File) {
 }
 
 export async function postRecall(key: string, msgId: string) {
-  return await request<FailResponse | OkResponse<{ message: ChatConsoleMessage }>>('post', 'recall', {
-    key,
-    msgId,
-  });
+  return await request<FailResponse | OkResponse<{ message: ChatConsoleMessage }>>(
+    'post',
+    'recall',
+    {
+      key,
+      msgId,
+    },
+  );
 }
 
 export async function postMute(key: string, memberOpenId: string, seconds: number) {
@@ -157,7 +163,7 @@ export async function postRename(key: string, name: string) {
   );
 }
 
-/** 立刻查一次官方群资料（简介 / 分类 / 标签 / 人数） */
+/** 立刻查一次官方资料：群聊是群名/简介/分类/标签/人数，私聊是用户名与是否接收主动推送 */
 export async function postGroupInfo(key: string) {
   return await request<FailResponse | OkResponse<{ conversation: ChatConsoleConversation }>>(
     'post',

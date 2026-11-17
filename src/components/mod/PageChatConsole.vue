@@ -85,9 +85,7 @@ const infoLoading = ref(false);
 
 const listEl = ref<HTMLDivElement>();
 
-const activeConv = computed(
-  () => conversations.value.find(c => c.key === activeKey.value) || null,
-);
+const activeConv = computed(() => conversations.value.find(c => c.key === activeKey.value) || null);
 
 const filteredConvs = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -504,7 +502,9 @@ async function saveRetention() {
     const res = await postSettings(Math.floor(days));
     if (res.result) {
       retentionInput.value = res.retentionDays;
-      ElMessage.success(`已保存：保留 ${res.retentionDays === 0 ? '全部历史' : res.retentionDays + ' 天'}`);
+      ElMessage.success(
+        `已保存：保留 ${res.retentionDays === 0 ? '全部历史' : res.retentionDays + ' 天'}`,
+      );
       await loadStorage();
       await loadConversations(true);
     } else {
@@ -628,7 +628,7 @@ async function copyTargetId() {
   }
 }
 
-/** 官方群资料里是否有任意一项可展示的内容 */
+/** 官方资料里是否有任意一项可展示的内容（群资料 / 私聊的主动推送状态） */
 const hasGroupProfile = computed(() => {
   const conv = activeConv.value;
   if (!conv) return false;
@@ -636,9 +636,16 @@ const hasGroupProfile = computed(() => {
     conv.fingerMemo ||
     conv.classText ||
     (conv.tags && conv.tags.length) ||
-    conv.memberCount
+    conv.memberCount ||
+    conv.allowProactiveMsg !== undefined
   );
 });
+
+/** 私聊「是否接收主动推送」的文案 */
+function allowProactiveText(conv: ChatConsoleConversation | null | undefined) {
+  if (!conv || conv.allowProactiveMsg === undefined) return '未知（点「刷新资料」查询）';
+  return conv.allowProactiveMsg ? '允许' : '不允许（只能被动回复）';
+}
 
 /** 群资料的指纹：用来判断「刷新」到底有没有拿到新东西 */
 function groupProfileSignature(conv: ChatConsoleConversation | null) {
@@ -649,13 +656,15 @@ function groupProfileSignature(conv: ChatConsoleConversation | null) {
     conv.fingerMemo || '',
     conv.classText || '',
     (conv.tags || []).join(','),
+    conv.allowProactiveMsg === undefined ? '' : String(conv.allowProactiveMsg),
   ].join('\u0001');
 }
 
-/** 手动向官方接口要一次群资料（简介 / 分类 / 标签 / 人数） */
+/** 手动向官方接口要一次资料：群聊是群资料，私聊是用户名/主动推送状态 */
 async function refreshGroupProfile() {
   const conv = activeConv.value;
   if (!conv) return;
+  const label = conv.kind === 'c2c' ? '用户资料' : '群资料';
   infoLoading.value = true;
   const before = groupProfileSignature(conv);
   try {
@@ -663,15 +672,15 @@ async function refreshGroupProfile() {
     if (res.result) {
       upsertConversation(res.conversation);
       if (groupProfileSignature(activeConv.value) === before) {
-        ElMessage.info('群资料没有变化（可能刚查过，3 秒内的重复查询会直接用缓存）');
+        ElMessage.info(`${label}没有变化（可能刚查过，3 秒内的重复查询会直接用缓存）`);
       } else {
-        ElMessage.success('群资料已更新');
+        ElMessage.success(`${label}已更新`);
       }
     } else {
-      ElMessage.error(res.err || '查询群资料失败');
+      ElMessage.error(res.err || `查询${label}失败`);
     }
   } catch (e: any) {
-    ElMessage.error(`查询群资料失败：${e?.message || e}`);
+    ElMessage.error(`查询${label}失败：${e?.message || e}`);
   } finally {
     infoLoading.value = false;
   }
@@ -835,7 +844,8 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="flex flex-1 min-h-0 rounded-lg overflow-hidden border border-gray-200 bg-white shadow-sm">
+    <div
+      class="flex flex-1 min-h-0 rounded-lg overflow-hidden border border-gray-200 bg-white shadow-sm">
       <!-- 会话列表 -->
       <div
         class="flex-none border-r border-gray-200 flex flex-col bg-gray-50"
@@ -881,12 +891,16 @@ onBeforeUnmount(() => {
                   class="text-[11px] cursor-pointer opacity-0 group-hover:opacity-100 transition"
                   :class="conv.pinned ? 'text-amber-500 opacity-100' : 'text-gray-400'"
                   :title="conv.pinned ? '取消置顶' : '置顶'"
-                  @click.stop="togglePin(conv)">📌</span>
+                  @click.stop="togglePin(conv)"
+                  >📌</span
+                >
                 <span class="text-[10px] text-gray-400">{{ formatTime(conv.lastTs) }}</span>
               </div>
             </div>
             <div class="flex items-center justify-between gap-2 mt-0.5">
-              <span class="text-xs text-gray-500 truncate">{{ conv.lastText || '（暂无消息）' }}</span>
+              <span class="text-xs text-gray-500 truncate">{{
+                conv.lastText || '（暂无消息）'
+              }}</span>
               <span
                 v-if="conv.unread > 0"
                 class="flex-none text-[10px] leading-4 px-1.5 rounded-full bg-red-500 text-white">
@@ -896,6 +910,9 @@ onBeforeUnmount(() => {
             <div class="text-[10px] text-gray-400 truncate mt-0.5">{{ conv.targetId }}</div>
             <div v-if="conv.kind === 'group' && !conv.fullMessage" class="mt-1">
               <el-tag size="small" type="warning" effect="plain">仅 @ 消息</el-tag>
+            </div>
+            <div v-if="conv.kind === 'c2c' && conv.allowProactiveMsg === false" class="mt-1">
+              <el-tag size="small" type="warning" effect="plain">仅被动</el-tag>
             </div>
           </div>
 
@@ -910,8 +927,7 @@ onBeforeUnmount(() => {
               @click="openSearchHit(hit)">
               <div class="text-[11px] text-gray-500 truncate">
                 <span class="text-gray-700">{{ hit.senderName || '未知' }}</span>
-                · {{ hit.conversationName }}
-                · {{ formatTime(hit.ts) }}
+                · {{ hit.conversationName }} · {{ formatTime(hit.ts) }}
               </div>
               <div class="text-xs text-gray-700 truncate">
                 {{ plainText(hit.text) || '[非文本消息]' }}
@@ -945,7 +961,9 @@ onBeforeUnmount(() => {
                 <div class="flex items-center gap-1 min-w-0">
                   <span class="text-sm font-medium truncate">{{ activeConv.name }}</span>
                   <el-tag v-if="!isNarrow && activeConv.kind === 'group'" size="small" type="info">
-                    群聊<span v-if="activeConv.memberCount"> · {{ activeConv.memberCount }} 人</span>
+                    群聊<span v-if="activeConv.memberCount">
+                      · {{ activeConv.memberCount }} 人</span
+                    >
                   </el-tag>
                   <el-tag v-else-if="!isNarrow" size="small" type="info">私聊</el-tag>
                 </div>
@@ -961,12 +979,7 @@ onBeforeUnmount(() => {
               <el-button size="small" text :icon="Edit" @click="renameCurrent">
                 <span v-if="!isNarrow">改名</span>
               </el-button>
-              <el-button
-                v-if="activeConv.kind === 'group'"
-                size="small"
-                text
-                :icon="InfoFilled"
-                @click="infoDialog = true">
+              <el-button size="small" text :icon="InfoFilled" @click="infoDialog = true">
                 <span v-if="!isNarrow">资料</span>
               </el-button>
             </div>
@@ -979,13 +992,27 @@ onBeforeUnmount(() => {
             :closable="false"
             show-icon
             title="该群未开启「获取全部群消息」，控制台只能看到 @ 机器人的消息。请在官方群设置里授权后，群内全部消息才会推送过来。" />
+          <el-alert
+            v-else-if="activeConv.kind === 'c2c' && activeConv.allowProactiveMsg === false"
+            class="flex-none rounded-none"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="该用户未开启主动推送：只能在其发消息后的 60 分钟内回复（每条最多 4 次），主动发送会失败。" />
 
-          <div ref="listEl" v-loading="loadingMsgs" class="flex-1 overflow-y-auto px-4 py-3 bg-gray-100">
+          <div
+            ref="listEl"
+            v-loading="loadingMsgs"
+            class="flex-1 overflow-y-auto px-4 py-3 bg-gray-100">
             <div v-if="hasMore" class="text-center mb-2">
-              <el-button size="small" text :loading="loadingMore" @click="loadMore">加载更早的消息</el-button>
+              <el-button size="small" text :loading="loadingMore" @click="loadMore"
+                >加载更早的消息</el-button
+              >
             </div>
 
-            <div v-if="messages.length === 0 && !loadingMsgs" class="text-center text-xs text-gray-400 py-10">
+            <div
+              v-if="messages.length === 0 && !loadingMsgs"
+              class="text-center text-xs text-gray-400 py-10">
               这里还没有消息（官方平台不提供历史回溯，只能记录开启后的消息）
             </div>
 
@@ -1006,17 +1033,29 @@ onBeforeUnmount(() => {
               <div
                 v-else
                 class="w-7 h-7 rounded-full flex-none flex items-center justify-center text-xs text-white"
-                :class="msg.source === 'console' ? 'bg-sky-500' : msg.source === 'bot' ? 'bg-emerald-500' : 'bg-gray-400'">
+                :class="
+                  msg.source === 'console'
+                    ? 'bg-sky-500'
+                    : msg.source === 'bot'
+                      ? 'bg-emerald-500'
+                      : 'bg-gray-400'
+                ">
                 {{ avatarText(msg) }}
               </div>
-              <div class="max-w-[70%] flex flex-col" :class="msg.source === 'console' ? 'items-end' : 'items-start'">
+              <div
+                class="max-w-[70%] flex flex-col"
+                :class="msg.source === 'console' ? 'items-end' : 'items-start'">
                 <div class="text-[11px] text-gray-400 mb-0.5">
                   {{ senderLabel(msg) }}
                   <span class="ml-1">{{ formatTime(msg.ts) }}</span>
                 </div>
 
-                <div class="flex items-center gap-1" :class="msg.source === 'console' ? 'flex-row-reverse' : ''">
-                  <div class="px-3 py-2 rounded-lg text-sm whitespace-pre-wrap break-words" :class="bubbleClass(msg)">
+                <div
+                  class="flex items-center gap-1"
+                  :class="msg.source === 'console' ? 'flex-row-reverse' : ''">
+                  <div
+                    class="px-3 py-2 rounded-lg text-sm whitespace-pre-wrap break-words"
+                    :class="bubbleClass(msg)">
                     <div v-if="msg.recalled" class="italic text-xs opacity-70">该消息已被撤回</div>
                     <template v-else>
                       <div
@@ -1025,8 +1064,12 @@ onBeforeUnmount(() => {
                         {{ msg.quote.sender }}：{{ msg.quote.text }}
                       </div>
                       <span v-if="plainText(msg.text)">{{ plainText(msg.text) }}</span>
-                      <span v-else-if="isPlaceholderMessage(msg)" class="text-xs opacity-70">[表情/图片（无法获取内容）]</span>
-                      <div v-if="msg.media && msg.media.length > 0" class="mt-1 flex flex-col gap-1">
+                      <span v-else-if="isPlaceholderMessage(msg)" class="text-xs opacity-70"
+                        >[表情/图片（无法获取内容）]</span
+                      >
+                      <div
+                        v-if="msg.media && msg.media.length > 0"
+                        class="mt-1 flex flex-col gap-1">
                         <template v-for="(m, i) in msg.media" :key="i">
                           <el-image
                             v-if="m.kind === 'image'"
@@ -1055,10 +1098,15 @@ onBeforeUnmount(() => {
                     </template>
                   </div>
 
-                  <div class="opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5">
+                  <div
+                    class="opacity-0 group-hover:opacity-100 transition flex items-center gap-0.5">
                     <el-button link size="small" @click="startQuote(msg)">回复</el-button>
-                    <el-button v-if="canRecall(msg)" link size="small" @click="recall(msg)">撤回</el-button>
-                    <el-button v-if="canMute(msg)" link size="small" @click="openMute(msg)">禁言</el-button>
+                    <el-button v-if="canRecall(msg)" link size="small" @click="recall(msg)"
+                      >撤回</el-button
+                    >
+                    <el-button v-if="canMute(msg)" link size="small" @click="openMute(msg)"
+                      >禁言</el-button
+                    >
                   </div>
                 </div>
               </div>
@@ -1067,12 +1115,23 @@ onBeforeUnmount(() => {
 
           <div class="border-t border-gray-200 p-2 flex-none bg-white">
             <!-- 引用条 -->
-            <div v-if="quote" class="mb-2 px-2 py-1 rounded bg-gray-100 text-xs text-gray-600 flex items-start gap-2">
+            <div
+              v-if="quote"
+              class="mb-2 px-2 py-1 rounded bg-gray-100 text-xs text-gray-600 flex items-start gap-2">
               <span class="flex-1 break-all">回复 {{ quote.sender }}：{{ quote.text }}</span>
-              <el-tag v-if="quote.msgId" size="small" type="success" disable-transitions title="引用会以被动回复发送（收到后 4 分钟内有效）"
+              <el-tag
+                v-if="quote.msgId"
+                size="small"
+                type="success"
+                disable-transitions
+                title="引用会以被动回复发送（收到后 4 分钟内有效）"
                 >引用</el-tag
               >
-              <el-tag v-else size="small" disable-transitions title="官方不支持主动消息挂引用，会以「回复 某人：原文」的形式出现在正文里"
+              <el-tag
+                v-else
+                size="small"
+                disable-transitions
+                title="官方不支持主动消息挂引用，会以「回复 某人：原文」的形式出现在正文里"
                 >正文引用</el-tag
               >
               <el-button link size="small" :icon="Close" @click="quote = null" />
@@ -1097,7 +1156,11 @@ onBeforeUnmount(() => {
               resize="none"
               maxlength="1500"
               show-word-limit
-              :placeholder="isNarrow ? '以机器人身份发言，Enter 发送' : '以机器人身份发送消息，Enter 发送，Shift+Enter 换行'"
+              :placeholder="
+                isNarrow
+                  ? '以机器人身份发言，Enter 发送'
+                  : '以机器人身份发送消息，Enter 发送，Shift+Enter 换行'
+              "
               @keydown.enter.exact="onEnter" />
 
             <input ref="fileInput" type="file" class="hidden" @change="onFileChange" />
@@ -1113,7 +1176,11 @@ onBeforeUnmount(() => {
                   <span v-if="!isNarrow">图片/文件</span>
                 </el-button>
 
-                <el-popover v-if="activeConv.kind === 'group'" placement="top" :width="220" trigger="click">
+                <el-popover
+                  v-if="activeConv.kind === 'group'"
+                  placement="top"
+                  :width="220"
+                  trigger="click">
                   <template #reference>
                     <el-button size="small">@成员</el-button>
                   </template>
@@ -1131,8 +1198,12 @@ onBeforeUnmount(() => {
                   </div>
                 </el-popover>
 
-                <span v-if="!isNarrow" class="text-[11px] text-gray-400 ml-1 truncate" title="正文支持 CQ 码：&#91;CQ:at,qq=openid&#93; 会被翻成官方 @，&#91;CQ:reply,id=msgId&#93; 走被动回复做真引用">
-                  私聊主动消息受官方额度限制；正文支持 &#91;CQ:at,qq=openid&#93; / &#91;CQ:reply,id=msgId&#93;
+                <span
+                  v-if="!isNarrow"
+                  class="text-[11px] text-gray-400 ml-1 truncate"
+                  title="正文支持 CQ 码：&#91;CQ:at,qq=openid&#93; 会被翻成官方 @，&#91;CQ:reply,id=msgId&#93; 走被动回复做真引用">
+                  私聊主动消息受官方额度限制；正文支持 &#91;CQ:at,qq=openid&#93; /
+                  &#91;CQ:reply,id=msgId&#93;
                 </span>
               </div>
               <el-button
@@ -1169,9 +1240,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="text-xs text-gray-500 mb-2">
-          合计占用 <b>{{ formatBytes(storage?.totalBytes || 0) }}</b>
-          · 会话 {{ storage?.conversations?.length || 0 }} 个
-          · 媒体只存链接、不存原件
+          合计占用 <b>{{ formatBytes(storage?.totalBytes || 0) }}</b> · 会话
+          {{ storage?.conversations?.length || 0 }} 个 · 媒体只存链接、不存原件
         </div>
 
         <el-table :data="storage?.conversations || []" height="340" size="small" border>
@@ -1190,7 +1260,12 @@ onBeforeUnmount(() => {
           </el-table-column>
           <el-table-column label="操作" width="90">
             <template #default="{ row }">
-              <el-button link type="danger" size="small" :icon="Delete" @click="purgeConversation(row)">
+              <el-button
+                link
+                type="danger"
+                size="small"
+                :icon="Delete"
+                @click="purgeConversation(row)">
                 清空
               </el-button>
             </template>
@@ -1205,15 +1280,26 @@ onBeforeUnmount(() => {
       </div>
     </el-dialog>
 
-    <el-dialog v-model="infoDialog" title="群资料" :width="isNarrow ? '94%' : '520px'">
+    <el-dialog
+      v-model="infoDialog"
+      :title="activeConv?.kind === 'c2c' ? '用户资料' : '群资料'"
+      :width="isNarrow ? '94%' : '520px'">
       <div class="text-sm flex flex-col gap-2">
         <div class="flex items-start gap-2">
-          <span class="text-gray-500 flex-none w-16">群名</span>
+          <span class="text-gray-500 flex-none w-16">{{
+            activeConv?.kind === 'c2c' ? '用户名' : '群名'
+          }}</span>
           <span class="break-all">{{ activeConv?.name }}</span>
         </div>
         <div class="flex items-start gap-2">
-          <span class="text-gray-500 flex-none w-16">群号</span>
+          <span class="text-gray-500 flex-none w-16">{{
+            activeConv?.kind === 'c2c' ? '用户 ID' : '群号'
+          }}</span>
           <span class="break-all text-xs">{{ activeConv?.targetId }}</span>
+        </div>
+        <div v-if="activeConv?.kind === 'c2c'" class="flex items-start gap-2">
+          <span class="text-gray-500 flex-none w-16">主动推送</span>
+          <span>{{ allowProactiveText(activeConv) }}</span>
         </div>
         <div v-if="activeConv?.memberCount" class="flex items-start gap-2">
           <span class="text-gray-500 flex-none w-16">人数</span>
@@ -1226,7 +1312,9 @@ onBeforeUnmount(() => {
         <div v-if="activeConv?.tags && activeConv.tags.length" class="flex items-start gap-2">
           <span class="text-gray-500 flex-none w-16">标签</span>
           <span class="flex flex-wrap gap-1">
-            <el-tag v-for="t in activeConv.tags" :key="t" size="small" disable-transitions>{{ t }}</el-tag>
+            <el-tag v-for="t in activeConv.tags" :key="t" size="small" disable-transitions>{{
+              t
+            }}</el-tag>
           </span>
         </div>
         <div v-if="activeConv?.fingerMemo" class="flex items-start gap-2">
@@ -1234,12 +1322,17 @@ onBeforeUnmount(() => {
           <span class="whitespace-pre-wrap break-all">{{ activeConv.fingerMemo }}</span>
         </div>
         <div v-if="!hasGroupProfile" class="text-xs text-gray-400">
-          还没有拿到这个群的资料。官方接口只在群名/资料查询成功后才返回简介、分类、标签，
-          点「刷新」再试一次，或等群里收到新消息后自动更新。
+          {{
+            activeConv?.kind === 'c2c'
+              ? '还没有拿到这个用户的资料。官方接口要求用户与机器人有好友关系，点「刷新资料」再试一次。'
+              : '还没有拿到这个群的资料。官方接口只在群名/资料查询成功后才返回简介、分类、标签，点「刷新资料」再试一次，或等群里收到新消息后自动更新。'
+          }}
         </div>
       </div>
       <template #footer>
-        <el-button size="small" :loading="infoLoading" @click="refreshGroupProfile">刷新</el-button>
+        <el-button size="small" :loading="infoLoading" @click="refreshGroupProfile"
+          >刷新资料</el-button
+        >
         <el-button size="small" type="primary" @click="infoDialog = false">关闭</el-button>
       </template>
     </el-dialog>
